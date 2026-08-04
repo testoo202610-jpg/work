@@ -12,10 +12,10 @@ export interface BuildingFootprint { width: number; height: number }
 export interface PathGrid { width: number; height: number; blocked: boolean[][] }
 export interface UnitStats { maxHealth: number; speed: number; damage: number; range: number; cooldown: number; cost: Cost; population: number }
 export interface BuildingStats { maxHealth: number; armor: number; cost: Cost; population: number; buildTime: number }
-export interface Unit { id: string; type: UnitType; faction: Faction; x: number; y: number; health: number; targetId?: string; carrying?: ResourceType; state: 'idle' | 'moving' | 'gathering' | 'returning' | 'attacking' | 'dead' }
-export interface Building { id: string; type: BuildingType; faction: Faction; x: number; y: number; health: number; progress: number; queue: UnitType[] }
+export interface Unit { id: string; type: UnitType; faction: Faction; x: number; y: number; health: number; targetId?: string; carrying?: ResourceType; carryingAmount?: number; path?: Point[]; state: 'idle' | 'moving' | 'gathering' | 'returning' | 'attacking' | 'building' | 'dead' }
+export interface Building { id: string; type: BuildingType; faction: Faction; x: number; y: number; health: number; progress: number; queue: UnitType[]; builderId?: string; queueProgress?: number }
 export interface ResourceNode { id: string; type: ResourceType; x: number; y: number; amount: number; maxAmount: number }
-export interface SaveData { version: 1; kingdom: Kingdom; difficulty: Difficulty; resources: Cost; units: Unit[]; buildings: Building[]; nodes: ResourceNode[]; elapsed: number; camera: Point }
+export interface SaveData { version: 1; kingdom: Kingdom; difficulty: Difficulty; resources: Cost; enemyResources: Cost; units: Unit[]; buildings: Building[]; nodes: ResourceNode[]; elapsed: number; camera: Point }
 
 export const KINGDOMS: Record<Kingdom, { name: string; color: number; description: string; bonuses: string }> = {
   flame: { name: 'مملكة اللهب', color: 0xef6c4d, description: 'محاربون شرسون يضربون بقوة.', bonuses: '+10٪ ضرر عسكري' },
