@@ -27,7 +27,7 @@ interface GameState {
   elapsed: number; camera: Point; explored: string[]; visible: string[]; fogMarkers: FogMarker[]
   phase: 'menu' | 'playing' | 'victory' | 'defeat'
   selectedIds: string[]; message: string
-  placement?: BuildingType; preview?: Point; demolishArmedId?: string; aiIdCounter: number
+  placement?: BuildingType; preview?: Point; demolishArmedId?: string; aiIdCounter: number; lastIdleAlert: number
   settings: Settings; showSettings: boolean
   setSetup: (kingdom: Kingdom, difficulty: Difficulty) => void
   start: () => void; select: (ids: string[], additive?: boolean) => void
@@ -136,7 +136,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   units: [], buildings: [], nodes: [], projectiles: [],
   elapsed: 0, camera: { x: 640, y: 440 }, explored: [], visible: [], fogMarkers: [],
   phase: 'menu', selectedIds: [], message: '',
-  placement: undefined, preview: undefined, demolishArmedId: undefined, aiIdCounter: 1,
+  placement: undefined, preview: undefined, demolishArmedId: undefined, aiIdCounter: 1, lastIdleAlert: -60,
   settings: loadSettings(), showSettings: false,
 
   setSetup: (kingdom, difficulty) => set({ kingdom, difficulty }),
@@ -512,7 +512,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     const playerHq = buildings.find((b) => b.id === 'player-hq')
     if (!underAttack && playerHq) underAttack = units.some((u) => u.faction === 'enemy' && u.state === 'attacking' && Math.hypot(u.x - playerHq.x, u.y - playerHq.y) < 430)
-    if (underAttack && Math.floor(elapsed) % 9 === 0) events.push(MSG.baseUnderAttack)
+    if (underAttack) events.push(MSG.baseUnderAttack)
 
     const profile = aiProfile(state.difficulty)
     const ticked = Math.floor(elapsed / profile.thinkInterval) !== Math.floor(state.elapsed / profile.thinkInterval)
@@ -531,6 +531,9 @@ export const useGameStore = create<GameState>((set, get) => ({
     const visibleSet = computeVisibleCells(units, buildings, 'player')
     const visible = [...visibleSet]
     const explored = mergeExplored(state.explored, visible)
+    const enemyViz = units.some((u) => u.faction === 'enemy' && u.state !== 'dead' && visibleSet.has(cellKey(toGrid(u).col, toGrid(u).row)))
+    const enemyWas = units.some((u) => u.faction === 'enemy' && u.state !== 'dead' && state.visible.includes(cellKey(toGrid(u).col, toGrid(u).row)))
+    if (enemyViz && !enemyWas && Math.floor(elapsed) !== Math.floor(state.elapsed)) events.push(MSG.enemySighted)
     const spotted = buildings
       .filter((b) => b.faction === 'enemy' && b.health > 0)
       .filter((b) => visibleSet.has(cellKeyOf(toGrid(b))))
@@ -541,13 +544,19 @@ export const useGameStore = create<GameState>((set, get) => ({
       .filter((marker) => buildings.some((b) => b.id === marker.id && b.health > 0))
     if (fogMarkers.length === state.fogMarkers.length) fogMarkers = state.fogMarkers
 
+    let lastIdleAlert = state.lastIdleAlert
+    if (elapsed - lastIdleAlert > 25 && units.some((u) => u.faction === 'player' && u.type === 'worker' && u.state === 'idle')) {
+      events.push(MSG.idleWorker)
+      lastIdleAlert = elapsed
+    }
+
     const phase = isVictory(buildings) ? 'victory' as const : isDefeat(buildings) ? 'defeat' as const : 'playing' as const
     if (phase === 'victory' && state.phase === 'playing') playCue('victory')
     if (phase === 'defeat' && state.phase === 'playing') playCue('defeat')
 
     set({
       resources, enemyResources, units, buildings, nodes, projectiles: flying,
-      elapsed, visible, explored, fogMarkers, phase, aiIdCounter,
+      elapsed, visible, explored, fogMarkers, phase, aiIdCounter, lastIdleAlert,
       message: events.length ? events[events.length - 1] : state.message,
     })
   },
