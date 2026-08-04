@@ -1,0 +1,10 @@
+import { describe, expect, it } from 'vitest'
+import { addCost, applyDamage, BUILDING_STATS, canAfford, capacity, deductCost, gatherNode, isDefeat, isVictory, population, restoreSave, serializeSave, UNIT_STATS } from './game'
+const resources = { food: 100, wood: 100, stone: 100, gold: 100 }
+describe('RTS rules', () => {
+  it('deducts building costs and rejects insufficient resources', () => { expect(canAfford(resources, BUILDING_STATS.farm.cost)).toBe(true); expect(deductCost(resources, BUILDING_STATS.farm.cost).wood).toBe(20); expect(canAfford({ ...resources, wood: 1 }, BUILDING_STATS.barracks.cost)).toBe(false) })
+  it('calculates population and building capacity', () => { const units = [{ id: 'w', type: 'worker' as const, faction: 'player' as const, x: 0, y: 0, health: 50, state: 'idle' as const }]; const buildings = [{ id: 'f', type: 'farm' as const, faction: 'player' as const, x: 0, y: 0, health: 200, progress: 1, queue: [] }]; expect(population(units, 'player')).toBe(1); expect(capacity(buildings, 'player')).toBe(5); expect(population(units, 'player') + UNIT_STATS.swordsman.population).toBeLessThanOrEqual(capacity(buildings, 'player')) })
+  it('handles armor, death, and destruction conditions', () => { expect(applyDamage(20, 30, 5)).toBe(0); const enemy = [{ id: 'hq', type: 'headquarters' as const, faction: 'enemy' as const, x: 0, y: 0, health: 0, progress: 1, queue: [] }]; const player = [{ ...enemy[0], id: 'phq', faction: 'player' as const, health: 100 }]; expect(isVictory([...enemy, ...player])).toBe(true); expect(isDefeat([...enemy, { ...player[0], health: 0 }])).toBe(true) })
+  it('depletes nodes and serializes saves', () => { const node = { id: 'n', type: 'food' as const, x: 0, y: 0, amount: 5, maxAmount: 5 }; expect(gatherNode(node, 10).gathered).toBe(5); const raw = serializeSave({ kingdom: 'rivers', difficulty: 'easy', resources, units: [], buildings: [], nodes: [], elapsed: 4, camera: { x: 0, y: 0 } }); expect(restoreSave(raw)?.elapsed).toBe(4); expect(restoreSave('{bad')).toBeNull() })
+  it('adds resources', () => { expect(addCost(resources, { food: 2, wood: 0, stone: 0, gold: 0 }).food).toBe(102) })
+})
