@@ -1,0 +1,22 @@
+// Arabic UI strings. Central catalog so every visible message stays RTL and localizable.
+export const MSG = {
+  insufficientResources: 'لا توجد موارد كافية',
+  invalidPlacement: 'المكان غير صالح للبناء',
+  popCap: 'وصلت إلى حد السكان — ابنِ مزرعة',
+  constructionDone: 'اكتمل البناء',
+  trainingDone: 'اكتمل التدريب',
+  baseUnderAttack: 'القاعدة تتعرض لهجوم!',
+  enemySighted: 'تم رصد قوات العدو',
+  idleWorker: 'عامل بلا عمل',
+  saved: 'تم حفظ اللعبة',
+  saveFailed: 'فشل الحفظ',
+  loaded: 'تم تحميل اللعبة',
+  saveCorrupt: 'ملف الحفظ تالف',
+  constructionStarted: 'بدأ البناء',
+  buildingCancelled: 'أُلغي البناء وأُعيد 75٪ من التكلفة',
+  demolishConfirm: 'اضغط الحذف مرة أخرى لتأكيد الهدم',
+  demolishing: 'جارٍ الهدم…',
+  wrongBuilding: 'المبنى لا يدعم هذه الوحدة',
+  needStable: 'تحتاج إسطبلًا لتدريب الفرسان',
+} as const
+export type MsgKey = keyof typeof MSG
