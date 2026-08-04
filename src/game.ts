@@ -12,7 +12,7 @@ export interface BuildingFootprint { width: number; height: number }
 export interface PathGrid { width: number; height: number; blocked: boolean[][] }
 export interface UnitStats { maxHealth: number; speed: number; damage: number; range: number; cooldown: number; cost: Cost; population: number }
 export interface BuildingStats { maxHealth: number; armor: number; cost: Cost; population: number; buildTime: number }
-export interface Unit { id: string; type: UnitType; faction: Faction; x: number; y: number; health: number; targetId?: string; carrying?: ResourceType; carryingAmount?: number; path?: Point[]; state: 'idle' | 'moving' | 'gathering' | 'returning' | 'attacking' | 'building' | 'dead' }
+export interface Unit { id: string; type: UnitType; faction: Faction; x: number; y: number; health: number; targetId?: string; carrying?: ResourceType; carryingAmount?: number; path?: Point[]; attackCooldown?: number; state: 'idle' | 'moving' | 'gathering' | 'returning' | 'attacking' | 'building' | 'dead' }
 export interface Building { id: string; type: BuildingType; faction: Faction; x: number; y: number; health: number; progress: number; queue: UnitType[]; builderId?: string; queueProgress?: number }
 export interface ResourceNode { id: string; type: ResourceType; x: number; y: number; amount: number; maxAmount: number }
 export interface SaveData { version: 1; kingdom: Kingdom; difficulty: Difficulty; resources: Cost; enemyResources: Cost; units: Unit[]; buildings: Building[]; nodes: ResourceNode[]; elapsed: number; camera: Point }
@@ -47,6 +47,7 @@ export function deductCost(resources: Cost, cost: Cost): Cost { return { food: r
 export function addCost(resources: Cost, amount: Cost): Cost { return { food: resources.food + amount.food, wood: resources.wood + amount.wood, stone: resources.stone + amount.stone, gold: resources.gold + amount.gold } }
 export function damageAfterArmor(damage: number, armor: number): number { return Math.max(1, damage - armor) }
 export function applyDamage(health: number, damage: number, armor = 0): number { return Math.max(0, health - damageAfterArmor(damage, armor)) }
+export function resolveAttack(attacker: Unit, target: Unit | Building): Unit | Building { const armor = 'type' in target && target.type in BUILDING_STATS ? BUILDING_STATS[target.type as BuildingType].armor : 0; const health = applyDamage(target.health, UNIT_STATS[attacker.type].damage, armor); return { ...target, health, ...(health === 0 && 'state' in target ? { state: 'dead' as const } : {}) } }
 export function isVictory(buildings: Building[]): boolean { return !buildings.some((b) => b.faction === 'enemy' && b.type === 'headquarters' && b.health > 0) }
 export function isDefeat(buildings: Building[]): boolean { return !buildings.some((b) => b.faction === 'player' && b.type === 'headquarters' && b.health > 0) }
 export function gatherNode(node: ResourceNode, requested: number): { node: ResourceNode; gathered: number } { const gathered = Math.min(requested, node.amount); return { node: { ...node, amount: node.amount - gathered }, gathered } }
