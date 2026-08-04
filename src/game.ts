@@ -6,7 +6,10 @@ export type BuildingType = 'headquarters' | 'barracks' | 'stable' | 'farm' | 'st
 export type Faction = 'player' | 'enemy'
 
 export interface Point { x: number; y: number }
+export interface GridPoint { col: number; row: number }
 export interface Cost { food: number; wood: number; stone: number; gold: number }
+export interface BuildingFootprint { width: number; height: number }
+export interface PathGrid { width: number; height: number; blocked: boolean[][] }
 export interface UnitStats { maxHealth: number; speed: number; damage: number; range: number; cooldown: number; cost: Cost; population: number }
 export interface BuildingStats { maxHealth: number; armor: number; cost: Cost; population: number; buildTime: number }
 export interface Unit { id: string; type: UnitType; faction: Faction; x: number; y: number; health: number; targetId?: string; carrying?: ResourceType; state: 'idle' | 'moving' | 'gathering' | 'returning' | 'attacking' | 'dead' }
@@ -26,14 +29,14 @@ export const UNIT_STATS: Record<UnitType, UnitStats> = {
   cavalry: { maxHealth: 150, speed: 135, damage: 28, range: 38, cooldown: 1.2, cost: { food: 100, wood: 0, stone: 0, gold: 70 }, population: 2 },
   commander: { maxHealth: 260, speed: 82, damage: 32, range: 42, cooldown: 0.9, cost: { food: 150, wood: 40, stone: 0, gold: 120 }, population: 2 },
 }
-export const BUILDING_STATS: Record<BuildingType, BuildingStats> = {
-  headquarters: { maxHealth: 1200, armor: 8, cost: { food: 0, wood: 0, stone: 0, gold: 0 }, population: 10, buildTime: 0 },
-  barracks: { maxHealth: 500, armor: 5, cost: { food: 0, wood: 180, stone: 80, gold: 0 }, population: 0, buildTime: 12 },
-  stable: { maxHealth: 450, armor: 5, cost: { food: 0, wood: 220, stone: 60, gold: 40 }, population: 0, buildTime: 15 },
-  farm: { maxHealth: 260, armor: 2, cost: { food: 0, wood: 80, stone: 0, gold: 0 }, population: 5, buildTime: 8 },
-  storage: { maxHealth: 350, armor: 4, cost: { food: 0, wood: 120, stone: 40, gold: 0 }, population: 0, buildTime: 10 },
-  watchtower: { maxHealth: 420, armor: 7, cost: { food: 0, wood: 100, stone: 140, gold: 40 }, population: 0, buildTime: 14 },
-  wall: { maxHealth: 600, armor: 10, cost: { food: 0, wood: 60, stone: 100, gold: 0 }, population: 0, buildTime: 6 },
+export const BUILDING_STATS: Record<BuildingType, BuildingStats & { footprint: BuildingFootprint }> = {
+  headquarters: { maxHealth: 1200, armor: 8, cost: { food: 0, wood: 0, stone: 0, gold: 0 }, population: 10, buildTime: 0, footprint: { width: 4, height: 4 } },
+  barracks: { maxHealth: 500, armor: 5, cost: { food: 0, wood: 180, stone: 80, gold: 0 }, population: 0, buildTime: 12, footprint: { width: 3, height: 3 } },
+  stable: { maxHealth: 450, armor: 5, cost: { food: 0, wood: 220, stone: 60, gold: 40 }, population: 0, buildTime: 15, footprint: { width: 3, height: 3 } },
+  farm: { maxHealth: 260, armor: 2, cost: { food: 0, wood: 80, stone: 0, gold: 0 }, population: 5, buildTime: 8, footprint: { width: 2, height: 2 } },
+  storage: { maxHealth: 350, armor: 4, cost: { food: 0, wood: 120, stone: 40, gold: 0 }, population: 0, buildTime: 10, footprint: { width: 2, height: 2 } },
+  watchtower: { maxHealth: 420, armor: 7, cost: { food: 0, wood: 100, stone: 140, gold: 40 }, population: 0, buildTime: 14, footprint: { width: 2, height: 2 } },
+  wall: { maxHealth: 600, armor: 10, cost: { food: 0, wood: 60, stone: 100, gold: 0 }, population: 0, buildTime: 6, footprint: { width: 1, height: 2 } },
 }
 export const INITIAL_RESOURCES: Cost = { food: 380, wood: 260, stone: 160, gold: 100 }
 
@@ -49,3 +52,9 @@ export function isDefeat(buildings: Building[]): boolean { return !buildings.som
 export function gatherNode(node: ResourceNode, requested: number): { node: ResourceNode; gathered: number } { const gathered = Math.min(requested, node.amount); return { node: { ...node, amount: node.amount - gathered }, gathered } }
 export function serializeSave(data: Omit<SaveData, 'version'>): string { return JSON.stringify({ ...data, version: 1 }) }
 export function restoreSave(raw: string): SaveData | null { try { const parsed: unknown = JSON.parse(raw); if (!parsed || typeof parsed !== 'object' || (parsed as { version?: unknown }).version !== 1) return null; return parsed as SaveData } catch { return null } }
+export const GRID_SIZE = 40
+export function toGrid(point: Point): GridPoint { return { col: Math.floor(point.x / GRID_SIZE), row: Math.floor(point.y / GRID_SIZE) } }
+export function fromGrid(point: GridPoint): Point { return { x: point.col * GRID_SIZE + GRID_SIZE / 2, y: point.row * GRID_SIZE + GRID_SIZE / 2 } }
+export function footprintCells(type: BuildingType, origin: GridPoint): GridPoint[] { const footprint = BUILDING_STATS[type].footprint; return Array.from({ length: footprint.width * footprint.height }, (_, index) => ({ col: origin.col + index % footprint.width, row: origin.row + Math.floor(index / footprint.width) })) }
+export function isPlacementValid(type: BuildingType, origin: GridPoint, mapWidth: number, mapHeight: number, buildings: Building[], nodes: ResourceNode[]): boolean { const cells = footprintCells(type, origin); if (cells.some((cell) => cell.col < 0 || cell.row < 0 || cell.col >= mapWidth || cell.row >= mapHeight)) return false; if (cells.some((cell) => nodes.some((node) => { const nodeCell = toGrid(node); return nodeCell.col === cell.col && nodeCell.row === cell.row }))) return false; return !cells.some((cell) => buildings.some((building) => footprintCells(building.type, toGrid({ x: building.x - BUILDING_STATS[building.type].footprint.width * GRID_SIZE / 2, y: building.y - BUILDING_STATS[building.type].footprint.height * GRID_SIZE / 2 })).some((occupied) => occupied.col === cell.col && occupied.row === cell.row))) }
+export function buildPath(grid: PathGrid, start: GridPoint, goal: GridPoint): GridPoint[] { const key = (point: GridPoint) => `${point.col},${point.row}`; const inside = (point: GridPoint) => point.col >= 0 && point.row >= 0 && point.col < grid.width && point.row < grid.height; const open: GridPoint[] = [start]; const came = new Map<string, GridPoint>(); const cost = new Map<string, number>([[key(start), 0]]); const heuristic = (point: GridPoint) => Math.abs(point.col - goal.col) + Math.abs(point.row - goal.row); while (open.length) { open.sort((a, b) => (cost.get(key(a)) ?? Infinity) + heuristic(a) - ((cost.get(key(b)) ?? Infinity) + heuristic(b))); const current = open.shift()!; if (current.col === goal.col && current.row === goal.row) { const path: GridPoint[] = [current]; let cursor = current; while (came.has(key(cursor))) { cursor = came.get(key(cursor))!; path.unshift(cursor) } return path } for (const delta of [{ col: 1, row: 0 }, { col: -1, row: 0 }, { col: 0, row: 1 }, { col: 0, row: -1 }, { col: 1, row: 1 }, { col: -1, row: -1 }, { col: 1, row: -1 }, { col: -1, row: 1 }]) { const next = { col: current.col + delta.col, row: current.row + delta.row }; if (!inside(next) || grid.blocked[next.row]?.[next.col]) continue; const nextKey = key(next); const nextCost = (cost.get(key(current)) ?? Infinity) + (delta.col !== 0 && delta.row !== 0 ? 1.414 : 1); if (nextCost < (cost.get(nextKey) ?? Infinity)) { came.set(nextKey, current); cost.set(nextKey, nextCost); if (!open.some((point) => point.col === next.col && point.row === next.row)) open.push(next) } } } return [] }
