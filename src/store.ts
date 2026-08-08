@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import {
-  addCost, advanceProjectile, attackDamage, BUILDING_STATS, buildPath, canAfford, capacity, cellKey,
+  addCost, advanceProjectile, attackDamage, BUILDING_STATS, UPGRADES, buildPath, canAfford, capacity, cellKey,
   computeVisibleCells, createProjectile, deductCost, fromGrid, GRID_SIZE, groupSlots,
   INITIAL_RESOURCES, isDefeat, isVictory, MAP_COLS, MAP_HEIGHT, MAP_ROWS, MAP_WIDTH,
   mergeExplored, OUTDATED_MARKER_SECONDS, population, projectileReached, REPAIR_HP_PER_SECOND,
@@ -29,7 +29,7 @@ interface GameState {
   phase: 'menu' | 'playing' | 'victory' | 'defeat'
   selectedIds: string[]; message: string
   placement?: BuildingType; preview?: Point; demolishArmedId?: string; aiIdCounter: number; lastIdleAlert: number
-  controlGroups: Record<number, ControlGroup>; rallyPointBuildingId?: string; lastGroupKeyPressTime: Record<number, number>
+  controlGroups: Record<number, ControlGroup>; rallyPointBuildingId?: string; lastGroupKeyPressTime: Record<number, number>; researchedUpgrades: import('./game').UpgradeId[]; activeResearch?: import('./game').UpgradeId; researchProgress: number
   settings: Settings; showSettings: boolean
   setSetup: (kingdom: Kingdom, difficulty: Difficulty) => void
   start: () => void; select: (ids: string[], additive?: boolean) => void
@@ -46,7 +46,7 @@ interface GameState {
   updateSettings: (partial: Partial<Settings>) => void; toggleSettings: () => void
   assignToControlGroup: (groupNum: number) => void; selectFromControlGroup: (groupNum: number) => void
   setRallyPointMode: (buildingId?: string) => void; applyRallyPoint: (x: number, y: number) => void
-  stopSelected: () => void; holdSelected: () => void; attackMoveSelected: (x: number, y: number) => void
+  stopSelected: () => void; holdSelected: () => void; attackMoveSelected: (x: number, y: number) => void; research: (id: import('./game').UpgradeId) => boolean
 }
 
 const trainingTime = (type: UnitType) => type === 'worker' ? 5 : type === 'cavalry' ? 12 : type === 'commander' ? 20 : 8
@@ -125,9 +125,9 @@ const acquireTarget = (unit: Unit, units: Unit[], buildings: Building[]): Unit |
 function loadSettings(): Settings {
   try { return { ...DEFAULT_SETTINGS, ...(JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') as Partial<Settings>) } } catch { return { ...DEFAULT_SETTINGS } }
 }
-function strike(attacker: Unit | { type: 'watchtower'; faction: Building['faction'] }, target: Unit | Building, units: Unit[], kingdom: Kingdom): Unit | Building {
+function strike(attacker: Unit | { type: 'watchtower'; faction: Building['faction'] }, target: Unit | Building, units: Unit[], kingdom: Kingdom, researchedUpgrades: import('./game').UpgradeId[] = []): Unit | Building {
   const kingdomBonus = attacker.type !== 'watchtower' && attacker.faction === 'player' && kingdom === 'flame' && attacker.type !== 'worker' ? 1.1 : 1
-  const damage = attackDamage(attacker, target, [], units) * kingdomBonus
+  const damage = attackDamage(attacker, target, [], units, researchedUpgrades) * kingdomBonus
   const armor = 'state' in target ? 0 : BUILDING_STATS[target.type].armor
   const health = Math.max(0, target.health - Math.max(1, damage - ('state' in target ? 0 : armor)))
   return 'state' in target
@@ -142,7 +142,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   elapsed: 0, camera: { x: 640, y: 440 }, explored: [], visible: [], fogMarkers: [],
   phase: 'menu', selectedIds: [], message: '',
   placement: undefined, preview: undefined, demolishArmedId: undefined, aiIdCounter: 1, lastIdleAlert: -60,
-  controlGroups: {}, rallyPointBuildingId: undefined, lastGroupKeyPressTime: {},
+  controlGroups: {}, rallyPointBuildingId: undefined, lastGroupKeyPressTime: {}, researchedUpgrades: [], researchProgress: 0,
   settings: loadSettings(), showSettings: false,
 
   setSetup: (kingdom, difficulty) => set({ kingdom, difficulty }),
@@ -154,7 +154,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       units: [...initialUnits(), ...initialEnemyUnits()], buildings: initialBuildings(), nodes: initialNodes(), projectiles: [],
       elapsed: 0, camera: { x: 640, y: 440 }, explored: [], visible: [], fogMarkers: [],
       selectedIds: [], placement: undefined, preview: undefined, demolishArmedId: undefined, aiIdCounter: 1, message: '',
-      controlGroups: {}, rallyPointBuildingId: undefined, lastGroupKeyPressTime: {},
+      controlGroups: {}, rallyPointBuildingId: undefined, lastGroupKeyPressTime: {}, researchedUpgrades: [], researchProgress: 0,
     })
     startMusic()
   },
@@ -318,7 +318,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         kingdom: state.kingdom, difficulty: state.difficulty, resources: state.resources,
         enemyResources: state.enemyResources, units: state.units, buildings: state.buildings,
         nodes: state.nodes, elapsed: state.elapsed, camera: state.camera, explored: state.explored,
-        controlGroups: state.controlGroups,
+        controlGroups: state.controlGroups, researchedUpgrades: state.researchedUpgrades, activeResearch: state.activeResearch, researchProgress: state.researchProgress,
       }))
       set({ message: MSG.saved })
       playCue('click')
@@ -348,7 +348,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       projectiles: [], visible: [], fogMarkers: [], selectedIds: [],
       placement: undefined, preview: undefined, demolishArmedId: undefined,
       phase: 'playing', message: MSG.loaded,
-      controlGroups: sanitizedGroups, rallyPointBuildingId: undefined, lastGroupKeyPressTime: {},
+      controlGroups: sanitizedGroups, rallyPointBuildingId: undefined, lastGroupKeyPressTime: {}, researchedUpgrades: data.researchedUpgrades ?? [], activeResearch: data.activeResearch, researchProgress: data.researchProgress ?? 0,
     })
     startMusic()
     return true
@@ -388,6 +388,16 @@ export const useGameStore = create<GameState>((set, get) => ({
     })
   },
 
+  research: (id) => {
+    const state = get()
+    const upgrade = UPGRADES[id]
+    if (!upgrade || state.activeResearch || state.researchedUpgrades.includes(id)) return false
+    const hq = state.buildings.find((b) => b.id === 'player-hq' && b.progress >= 1 && b.health > 0)
+    if (!hq || !canAfford(state.resources, upgrade.cost)) return false
+    set({ resources: deductCost(state.resources, upgrade.cost), activeResearch: id, researchProgress: 0 })
+    return true
+  },
+
   stopSelected: () => {
     const state = get()
     const updated = state.units.map((u) =>
@@ -421,6 +431,10 @@ export const useGameStore = create<GameState>((set, get) => ({
     const events: string[] = []
     const elapsed = state.elapsed + dt
     let resources = { ...state.resources }
+    const researchedUpgrades = [...state.researchedUpgrades]
+    let activeResearch = state.activeResearch
+    let researchProgress = state.researchProgress
+    if (activeResearch) { researchProgress += dt; if (researchProgress >= UPGRADES[activeResearch].time) { researchedUpgrades.push(activeResearch); activeResearch = undefined; researchProgress = 0 } }
     let enemyResources = { ...state.enemyResources }
     const freshProjectiles: Projectile[] = []
     let underAttack = false
@@ -554,7 +568,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         freshProjectiles.push(createProjectile(u.id, u.type, u.faction, target, u.x, u.y, nextId('shot')))
         if (u.faction === 'player') playCue('ranged')
       } else {
-        const hit = strike(u, target, units, state.kingdom)
+        const hit = strike(u, target, units, state.kingdom, researchedUpgrades)
         if ('state' in hit) units = units.map((v) => (v.id === hit.id ? (hit as Unit) : v))
         else buildings = buildings.map((b) => (b.id === hit.id ? (hit as Building) : b))
         if (!('state' in hit) && hit.faction === 'player') underAttack = true
@@ -635,7 +649,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (phase === 'defeat' && state.phase === 'playing') playCue('defeat')
 
     set({
-      resources, enemyResources, units, buildings, nodes, projectiles: flying,
+      resources, enemyResources, researchedUpgrades, activeResearch, researchProgress, units, buildings, nodes, projectiles: flying,
       elapsed, visible, explored, fogMarkers, phase, aiIdCounter, lastIdleAlert,
       message: events.length ? events[events.length - 1] : state.message,
     })

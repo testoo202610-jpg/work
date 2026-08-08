@@ -98,11 +98,22 @@ function SelectedPanel() {
         {building.faction === 'player' && building.progress >= 1 && building.type !== 'headquarters' && (
           <button className="secondary danger-btn" onClick={() => state.demolish(building.id)}>هدم (Delete مرتين)</button>
         )}
-        {building.faction === 'player' && building.progress >= 1 && (
+        {building.faction === 'player' && building.type === 'headquarters' && building.progress >= 1 && (
+          <div className="commands">
+            <h3>التقنيات</h3>
+            {(['weapons1', 'armor1', 'gathering1'] as const).map((id) => (
+              <button key={id} onClick={() => state.research(id)} disabled={state.researchedUpgrades.includes(id) || Boolean(state.activeResearch)}>
+                {id === 'weapons1' ? 'أسلحة I' : id === 'armor1' ? 'درع I' : 'جمع I'}
+                <small>{state.researchedUpgrades.includes(id) ? 'مكتملة' : state.activeResearch === id ? `بحث ${Math.floor(state.researchProgress)}ث` : 'بحث'}</small>
+              </button>
+            ))}
+          </div>
+        )}
+        {building.faction === 'player' && building.type !== 'headquarters' && building.progress >= 1 && (
           <div className="commands">
             <h3>الإنتاج</h3>
             {(Object.keys(unitLabel) as UnitType[])
-              .filter((type) => (building.type === 'headquarters' ? type === 'worker' || type === 'commander' : building.type === 'barracks' ? type === 'swordsman' || type === 'archer' : building.type === 'stable' && type === 'cavalry'))
+              .filter((type) => (building.type === 'barracks' ? type === 'swordsman' || type === 'archer' : building.type === 'stable' && type === 'cavalry'))
               .map((type) => {
                 const cost = UNIT_STATS[type].cost
                 return (

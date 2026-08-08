@@ -4,6 +4,8 @@ export type ResourceType = 'food' | 'wood' | 'stone' | 'gold'
 export type UnitType = 'worker' | 'swordsman' | 'archer' | 'cavalry' | 'commander'
 export type BuildingType = 'headquarters' | 'barracks' | 'stable' | 'farm' | 'storage' | 'watchtower' | 'wall'
 export type Faction = 'player' | 'enemy'
+export type UpgradeId = 'weapons1' | 'armor1' | 'gathering1'
+export const UPGRADES: Record<UpgradeId, { cost: Cost; time: number }> = { weapons1: { cost: { food: 0, wood: 140, stone: 0, gold: 80 }, time: 25 }, armor1: { cost: { food: 0, wood: 100, stone: 80, gold: 60 }, time: 25 }, gathering1: { cost: { food: 80, wood: 100, stone: 0, gold: 40 }, time: 20 } }
 
 export interface Point { x: number; y: number }
 export interface GridPoint { col: number; row: number }
@@ -18,7 +20,7 @@ export interface Building { id: string; type: BuildingType; faction: Faction; x:
 export interface ResourceNode { id: string; type: ResourceType; x: number; y: number; amount: number; maxAmount: number }
 export interface Projectile { id: string; attackerId: string; attackerType: UnitType | 'watchtower'; faction: Faction; targetId: string; x: number; y: number; speed: number }
 export interface ControlGroup { unitIds: string[] }
-export interface SaveData { version: 1; kingdom: Kingdom; difficulty: Difficulty; resources: Cost; enemyResources: Cost; units: Unit[]; buildings: Building[]; nodes: ResourceNode[]; elapsed: number; camera: Point; explored: string[]; controlGroups?: Record<number, ControlGroup> }
+export interface SaveData { version: 1; kingdom: Kingdom; difficulty: Difficulty; resources: Cost; enemyResources: Cost; units: Unit[]; buildings: Building[]; nodes: ResourceNode[]; elapsed: number; camera: Point; explored: string[]; controlGroups?: Record<number, ControlGroup>; researchedUpgrades?: UpgradeId[]; activeResearch?: UpgradeId; researchProgress?: number }
 
 export const GRID_SIZE = 40
 export const MAP_COLS = 53
@@ -176,8 +178,9 @@ export function counterMultiplier(attacker: UnitType, target: UnitType): number 
   if (attacker === 'archer' && (target === 'worker' || target === 'swordsman')) return COUNTER_MULTIPLIER
   return 1
 }
-export function attackDamage(attacker: Unit | { type: 'watchtower' }, target: Unit | Building, buildings: Building[] = [], units: Unit[] = []): number {
+export function attackDamage(attacker: Unit | { type: 'watchtower' }, target: Unit | Building, buildings: Building[] = [], units: Unit[] = [], researchedUpgrades: UpgradeId[] = []): number {
   let damage = attacker.type === 'watchtower' ? TOWER_DAMAGE : UNIT_STATS[attacker.type].damage
+  if (researchedUpgrades.includes('weapons1') && attacker.type !== 'watchtower' && 'faction' in attacker && attacker.faction === 'player' && attacker.type !== 'worker') damage *= 1.1
   if (attacker.type !== 'watchtower' && 'state' in target) damage *= counterMultiplier(attacker.type, target.type)
   if ('type' in target && (target.type as string) in BUILDING_STATS) damage -= BUILDING_STATS[target.type as BuildingType].armor
   if (attacker.type !== 'watchtower') {
@@ -366,10 +369,16 @@ function isValidSaveData(data: unknown): data is SaveData {
   return true
 }
 
+function isValidUpgradeState(save: SaveData): boolean {
+  if (save.researchedUpgrades !== undefined && (!Array.isArray(save.researchedUpgrades) || new Set(save.researchedUpgrades).size !== save.researchedUpgrades.length || !save.researchedUpgrades.every((u) => u in UPGRADES))) return false
+  if (save.activeResearch !== undefined && !(save.activeResearch in UPGRADES)) return false
+  if (save.activeResearch && save.researchedUpgrades?.includes(save.activeResearch)) return false
+  return save.researchProgress === undefined || (Number.isFinite(save.researchProgress) && save.researchProgress >= 0 && save.researchProgress <= (save.activeResearch ? UPGRADES[save.activeResearch].time : 0))
+}
 export function restoreSave(raw: string): SaveData | null {
   try {
     const parsed: unknown = JSON.parse(raw)
-    if (!isValidSaveData(parsed)) return null
+    if (!isValidSaveData(parsed) || !isValidUpgradeState(parsed)) return null
     return parsed as SaveData
   } catch {
     return null
