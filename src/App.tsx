@@ -3,6 +3,14 @@ import { BUILDING_STATS, capacity, KINGDOMS, population, reservedPopulation, UNI
 import type { Difficulty, Kingdom, UnitType } from './game'
 import { GameCanvas, MiniMap } from './GameCanvas'
 import { useGameStore } from './store'
+/* istanbul ignore next */
+// Expose store for test introspection when running under E2E test bridge.
+if (typeof window !== 'undefined') {
+  // @ts-expect-error test bridge
+  window.__useGameStore__ = useGameStore
+  // @ts-expect-error test bridge
+  if (window.__RTS_TEST_TIMESCALE__) useGameStore.setState({})
+}
 import './App.css'
 
 const labels = { food: 'طعام', wood: 'خشب', stone: 'حجر', gold: 'ذهب' } as const

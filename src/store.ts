@@ -49,7 +49,12 @@ interface GameState {
   stopSelected: () => void; holdSelected: () => void; attackMoveSelected: (x: number, y: number) => void; research: (id: import('./game').UpgradeId) => boolean
 }
 
-const trainingTime = (type: UnitType) => type === 'worker' ? 5 : type === 'cavalry' ? 12 : type === 'commander' ? 20 : 8
+const trainingTime = (type: UnitType) => {
+  const base = type === 'worker' ? 5 : type === 'cavalry' ? 12 : type === 'commander' ? 20 : 8
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const scale = (typeof window !== 'undefined' && (window as any).__RTS_TEST_TIMESCALE__) || 1
+  return base / scale
+}
 let uid = 0
 const nextId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${uid++}`
 
@@ -96,11 +101,14 @@ const nearestDropoff = (buildings: Building[], unit: Unit) =>
     .sort((a, b) => Math.hypot(a.x - unit.x, a.y - unit.y) - Math.hypot(b.x - unit.x, b.y - unit.y))[0]
 
 function moveAlong(unit: Unit, dt: number, kingdom: Kingdom): Unit {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const scale = (typeof window !== 'undefined' && (window as any).__RTS_TEST_TIMESCALE__) || 1
+  const stepDt = dt * scale
   const next = unit.path?.[0]
   if (!next) return unit
   const speed = UNIT_STATS[unit.type].speed * (kingdom === 'rivers' && unit.type === 'worker' && unit.faction === 'player' ? 1.15 : 1)
   const distance = Math.hypot(next.x - unit.x, next.y - unit.y)
-  const step = speed * dt
+  const step = speed * stepDt
   if (distance <= step) return { ...unit, x: next.x, y: next.y, path: unit.path?.slice(1) }
   return { ...unit, x: unit.x + ((next.x - unit.x) / distance) * step, y: unit.y + ((next.y - unit.y) / distance) * step }
 }
@@ -428,15 +436,18 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
 
   tick: (dt) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const scale = (typeof window !== 'undefined' && (window as any).__RTS_TEST_TIMESCALE__) || 1
+    const step = dt * scale
     const state = get()
     if (state.phase !== 'playing') return
     const events: string[] = []
-    const elapsed = state.elapsed + dt
+    const elapsed = state.elapsed + step
     let resources = { ...state.resources }
     const researchedUpgrades = [...state.researchedUpgrades]
     let activeResearch = state.activeResearch
     let researchProgress = state.researchProgress
-    if (activeResearch) { researchProgress += dt; if (researchProgress >= UPGRADES[activeResearch].time) { researchedUpgrades.push(activeResearch); activeResearch = undefined; researchProgress = 0 } }
+    if (activeResearch) { researchProgress += step; if (researchProgress >= UPGRADES[activeResearch].time) { researchedUpgrades.push(activeResearch); activeResearch = undefined; researchProgress = 0 } }
     let enemyResources = { ...state.enemyResources }
     const freshProjectiles: Projectile[] = []
     let underAttack = false
@@ -444,15 +455,15 @@ export const useGameStore = create<GameState>((set, get) => ({
     const nodes: ResourceNode[] = state.nodes.map((n) => ({ ...n }))
     let units: Unit[] = state.units
       .filter((u) => u.state !== 'dead')
-      .map((u) => ({ ...u, attackCooldown: Math.max(0, (u.attackCooldown ?? 0) - dt) }))
+      .map((u) => ({ ...u, attackCooldown: Math.max(0, (u.attackCooldown ?? 0) - step) }))
 
-    units = units.map((u) => (u.path?.length ? moveAlong(u, dt, state.kingdom) : u))
+    units = units.map((u) => (u.path?.length ? moveAlong(u, step, state.kingdom) : u))
 
     buildings = buildings.map((b) => {
       if (b.progress >= 1) return b
       const builder = units.find((u) => u.id === b.builderId && u.state === 'building')
       if (!builder || Math.hypot(builder.x - b.x, builder.y - b.y) > 80) return b
-      const next = Math.min(1, b.progress + dt / BUILDING_STATS[b.type].buildTime)
+      const next = Math.min(1, b.progress + step / BUILDING_STATS[b.type].buildTime)
       if (next >= 1 && b.faction === 'player') { events.push(MSG.constructionDone); playCue('construct') }
       return {
         ...b, progress: next,
@@ -464,7 +475,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     buildings = buildings.map((b) => {
       if (b.progress < 1 || b.queue.length === 0) return b
-      const progress = (b.queueProgress ?? 0) + dt
+      const progress = (b.queueProgress ?? 0) + step
       if (progress < trainingTime(b.queue[0])) return { ...b, queueProgress: progress }
       const type = b.queue[0]
       const offset = BUILDING_STATS[b.type].footprint.width * GRID_SIZE * 0.5 + 26
@@ -492,7 +503,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         if (Math.hypot(target.x - u.x, target.y - u.y) > 68) {
           return u.path?.length ? u : { ...u, path: routeTo(buildings, nodes, u, target) }
         }
-        const want = Math.min(REPAIR_HP_PER_SECOND * dt, max - target.health)
+        const want = Math.min(REPAIR_HP_PER_SECOND * step, max - target.health)
         const affordable = Math.min(want, resources.wood * 10)
         if (affordable > 0) {
           resources = { ...resources, wood: resources.wood - affordable / 10 }
@@ -506,7 +517,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         if (Math.hypot(node.x - u.x, node.y - u.y) > 46) {
           return u.path?.length ? u : { ...u, path: routeTo(buildings, nodes, u, node) }
         }
-        const gathered = Math.min(node.amount, gatherRate(u) * dt)
+        const gathered = Math.min(node.amount, gatherRate(u) * step)
         node.amount -= gathered
         const carried = (u.carryingAmount ?? 0) + gathered
         if (carried >= 25 || node.amount <= 0) {
@@ -545,7 +556,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     units = units.map((u) => {
       const f = forces.get(u.id)
       if (!f) return u
-      return { ...u, x: clamp(u.x + f.x * 26 * dt, 8, MAP_WIDTH - 8), y: clamp(u.y + f.y * 26 * dt, 8, MAP_HEIGHT - 8) }
+      return { ...u, x: clamp(u.x + f.x * 26 * step, 8, MAP_WIDTH - 8), y: clamp(u.y + f.y * 26 * step, 8, MAP_HEIGHT - 8) }
     })
 
 
@@ -598,7 +609,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       const target = units.find((u) => u.id === shot.targetId && u.state !== 'dead')
         ?? buildings.find((b) => b.id === shot.targetId && b.health > 0)
       if (!target) return
-      const advanced = advanceProjectile(shot, target, 4 * dt)
+      const advanced = advanceProjectile(shot, target, 4 * step)
       if (!projectileReached(advanced, target)) { survivors.push(advanced); return }
       const proxy: Unit = units.find((u) => u.id === shot.attackerId)
         ?? { id: shot.attackerId, type: shot.attackerType === 'watchtower' ? 'archer' : shot.attackerType, faction: shot.faction, x: shot.x, y: shot.y, health: 1, state: 'attacking' as const }

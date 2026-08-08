@@ -141,6 +141,11 @@ describe('resources and saves', () => {
     expect(restoreSave('{bad')).toBeNull()
     expect(restoreSave('{"version":2}')).toBeNull()
   })
+  it('rejects saves with NaN or Infinity resources', () => {
+    const badResources = { food: NaN, wood: Infinity, stone: -10, gold: 0 }
+    const base = { kingdom: 'rivers' as const, difficulty: 'easy' as const, resources: badResources, enemyResources: badResources, units: [] as Unit[], buildings: [] as Building[], nodes: [] as ResourceNode[], elapsed: 0, camera: { x: 0, y: 0 }, explored: [] as string[] }
+    expect(restoreSave(JSON.stringify(base))).toBeNull()
+  })
 })
 
 describe('RTS controls', () => {

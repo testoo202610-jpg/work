@@ -22,6 +22,13 @@ export interface Projectile { id: string; attackerId: string; attackerType: Unit
 export interface ControlGroup { unitIds: string[] }
 export interface SaveData { version: 1; kingdom: Kingdom; difficulty: Difficulty; resources: Cost; enemyResources: Cost; units: Unit[]; buildings: Building[]; nodes: ResourceNode[]; elapsed: number; camera: Point; explored: string[]; controlGroups?: Record<number, ControlGroup>; researchedUpgrades?: UpgradeId[]; activeResearch?: UpgradeId; researchProgress?: number }
 
+// Only exposed in test environments; never in production builds.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const RTS_TEST_BRIDGE = (typeof window !== 'undefined' && (window as any).__RTS_ACTIVATE_TEST_BRIDGE__) ? {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  setTimeScale: (s: number) => { (window as any).__RTS_TEST_TIMESCALE__ = s },
+} : undefined
+
 export const GRID_SIZE = 40
 export const MAP_COLS = 53
 export const MAP_ROWS = 30
