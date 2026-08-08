@@ -18,6 +18,7 @@ export const MSG = {
   demolishing: 'جارٍ الهدم…',
   wrongBuilding: 'المبنى لا يدعم هذه الوحدة',
   needStable: 'تحتاج إسطبلًا لتدريب الفرسان',
+  weapons1: 'تطوير الأسلحة I', armor1: 'تطوير الدروع I', gathering1: 'تطوير جمع الموارد I', researching: 'جارٍ البحث', researched: 'تم البحث',
   groupAssigned: 'تم حفظ المجموعة',
   groupSelected: 'تم اختيار المجموعة',
   rallySet: 'تم تعيين نقطة التجمع',

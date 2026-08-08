@@ -127,7 +127,9 @@ function loadSettings(): Settings {
 }
 function strike(attacker: Unit | { type: 'watchtower'; faction: Building['faction'] }, target: Unit | Building, units: Unit[], kingdom: Kingdom, researchedUpgrades: import('./game').UpgradeId[] = []): Unit | Building {
   const kingdomBonus = attacker.type !== 'watchtower' && attacker.faction === 'player' && kingdom === 'flame' && attacker.type !== 'worker' ? 1.1 : 1
-  const damage = attackDamage(attacker, target, [], units, researchedUpgrades) * kingdomBonus
+  const armorReduction = 'state' in target ? 1 : 1
+  const durability = 'state' in target && target.faction === attacker.faction && researchedUpgrades.includes('armor1') && target.type !== 'worker' ? 1 / 1.1 : 1
+  const damage = attackDamage(attacker, target, [], units, researchedUpgrades) * kingdomBonus * durability * armorReduction
   const armor = 'state' in target ? 0 : BUILDING_STATS[target.type].armor
   const health = Math.max(0, target.health - Math.max(1, damage - ('state' in target ? 0 : armor)))
   return 'state' in target
@@ -471,7 +473,10 @@ export const useGameStore = create<GameState>((set, get) => ({
       return { ...b, queue: b.queue.slice(1), queueProgress: 0 }
     })
 
-    const gatherRate = (u: Unit) => (u.faction === 'player' ? (state.kingdom === 'rivers' ? 12 : 10) : 0)
+    const gatherRate = (u: Unit) => {
+      const base = u.faction === 'player' ? (state.kingdom === 'rivers' ? 12 : 10) : 0
+      return researchedUpgrades.includes('gathering1') && u.type === 'worker' ? base * 1.15 : base
+    }
     units = units.map((u) => {
       if (u.state === 'dead') return u
       if (u.state === 'building' && u.targetId) {
@@ -597,7 +602,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       if (!projectileReached(advanced, target)) { survivors.push(advanced); return }
       const proxy: Unit = units.find((u) => u.id === shot.attackerId)
         ?? { id: shot.attackerId, type: shot.attackerType === 'watchtower' ? 'archer' : shot.attackerType, faction: shot.faction, x: shot.x, y: shot.y, health: 1, state: 'attacking' as const }
-      const hit = strikeUnitOf(shot.attackerType, proxy, target, units, state.kingdom)
+      const hit = strikeUnitOf(shot.attackerType, proxy, target, units, state.kingdom, researchedUpgrades)
       if ('state' in hit) units = units.map((v) => (v.id === hit.id ? (hit as Unit) : v))
       else { buildings = buildings.map((b) => (b.id === hit.id ? (hit as Building) : b)); if (hit.faction === 'player') underAttack = true }
       if (hit.health <= 0) playCue('destroy')
@@ -657,9 +662,9 @@ export const useGameStore = create<GameState>((set, get) => ({
 }))
 
 function cellKeyOf(cell: GridPoint): string { return cellKey(cell.col, cell.row) }
-function strikeUnitOf(attackerType: UnitType | 'watchtower', attacker: Unit, target: Unit | Building, units: Unit[], kingdom: Kingdom): Unit | Building {
+function strikeUnitOf(attackerType: UnitType | 'watchtower', attacker: Unit, target: Unit | Building, units: Unit[], kingdom: Kingdom, researchedUpgrades: import('./game').UpgradeId[] = []): Unit | Building {
   void attackerType
-  return strike(attacker, target, units, kingdom)
+  return strike(attacker, target, units, kingdom, researchedUpgrades)
 }
 export const factionOf = (id: string, units: Unit[], buildings: Building[]) =>
   units.find((u) => u.id === id)?.faction ?? buildings.find((b) => b.id === id)?.faction
