@@ -1,15 +1,13 @@
 import { useEffect, useRef } from 'react'
 import Phaser from 'phaser'
-import { BUILDING_STATS, DEFAULT_FOG_COLOR, fromGrid, GRID_SIZE, isPlacementValid, MAP_COLS, MAP_HEIGHT, MAP_ROWS, MAP_WIDTH, toGrid, UNIT_STATS } from './game'
+import { BUILDING_STATS, DEFAULT_FOG_COLOR, fromGrid, GRID_SIZE, isPlacementValid, MAP_COLS, MAP_HEIGHT, MAP_ROWS, MAP_WIDTH, toGrid } from './game'
 import type { Building, ResourceNode } from './game'
 import { useGameStore } from './store'
 import { ISO, isoDepth, isoToWorld, worldToIso } from './isometric'
 import { diamondPath, drawIsoShadow } from './isoRender'
+import { drawBuildingArt, drawUnit, unitFacing, visualState } from './visualArt'
 
 const colors: Record<string, number> = { food: 0x79b957, wood: 0x9b673d, stone: 0xa7b1b8, gold: 0xf0c44c }
-const UNIT_COLORS: Record<string, number> = { worker: 0x79c7a8, swordsman: 0x65b7e8, archer: 0x80c8ff, cavalry: 0xf2a55b, commander: 0xf1ce70 }
-const PLAYER_ACCENT = 0x4db6ac
-const ENEMY_ACCENT = 0xd45a5a
 
 let sceneRef: RTSScene | null = null
 export function centerCameraAt(x: number, y: number): void { sceneRef?.centerOn(worldToIso({ x, y }).x, worldToIso({ x, y }).y) }
@@ -17,6 +15,7 @@ export const sceneRegistry = { set(scene: RTSScene) { sceneRef = scene }, clear(
 
 class RTSScene extends Phaser.Scene {
   private last = 0
+  private currentTime = 0
   private dragStart?: Phaser.Math.Vector2
   private keys!: Record<string, Phaser.Input.Keyboard.Key>
   private terrainLayer!: Phaser.GameObjects.Graphics
@@ -156,6 +155,7 @@ class RTSScene extends Phaser.Scene {
   update(time: number) {
     const dt = Math.min((time - this.last) / 1000, 0.05)
     this.last = time
+    this.currentTime = time
     const store = useGameStore.getState()
     const speed = store.settings.cameraSpeed * dt * (this.keys?.shift?.isDown ? 1.8 : 1)
     const cam = this.cameras.main
@@ -230,36 +230,12 @@ class RTSScene extends Phaser.Scene {
       .forEach((b) => this.drawBuilding(e, b, state.selectedIds.includes(b.id)))
 
     state.units.filter((u) => u.state !== 'dead' && (u.faction !== 'enemy' || isVisible(u.x, u.y))).sort((a, b) => isoDepth(a) - isoDepth(b)).forEach((u) => {
-      const p = project(u)
-      const color = u.faction === 'player' ? (UNIT_COLORS[u.type] ?? PLAYER_ACCENT) : ENEMY_ACCENT
-      const radius = UNIT_STATS[u.type].radius
-      drawIsoShadow(e, u, u.type === 'cavalry' ? 34 : 24)
-      e.fillStyle(color)
-      if (u.type === 'cavalry') {
-        e.fillEllipse(p.x, p.y - 10, 34, 18)
-        e.fillStyle(0x6f4b2e); e.fillRect(p.x - 13, p.y - 29, 5, 20); e.fillRect(p.x + 8, p.y - 29, 5, 20)
-        e.fillStyle(0xead1aa); e.fillEllipse(p.x + 3, p.y - 30, 17, 13)
-        e.fillStyle(color); e.fillCircle(p.x, p.y - 44, 8)
-      } else {
-        e.fillEllipse(p.x, p.y - 9, radius * 1.45, radius * 1.15)
-        e.fillStyle(0xe8c6a0); e.fillCircle(p.x, p.y - 25, radius * 0.7)
-        e.fillStyle(color); e.fillRect(p.x - radius * 0.65, p.y - 18, radius * 1.3, 5)
-        if (u.type === 'worker') { e.lineStyle(3, 0x8e673d); e.lineBetween(p.x + 7, p.y - 14, p.x + 18, p.y - 28) }
-        if (u.type === 'swordsman' || u.type === 'commander') { e.lineStyle(3, 0xd9e1e3); e.lineBetween(p.x + 7, p.y - 14, p.x + 20, p.y - 30); e.fillStyle(0x8c5536); e.fillCircle(p.x - 10, p.y - 14, 7) }
-        if (u.type === 'archer') { e.lineStyle(2, 0xe0bd75); e.strokeCircle(p.x + 9, p.y - 18, 9) }
-      }
-      if (state.selectedIds.includes(u.id)) { e.lineStyle(3, 0xffe27a); e.strokeEllipse(p.x, p.y + 7, radius * 3.2, radius * 1.2) }
-      if (u.carryingAmount && u.carryingAmount > 0.5) { e.fillStyle(colors[u.carrying ?? 'food']); e.fillCircle(p.x, p.y - 40, 4) }
-      const max = UNIT_STATS[u.type].maxHealth
-      if (u.health < max || state.selectedIds.includes(u.id)) {
-        e.fillStyle(0x311a1a); e.fillRect(p.x - 16, p.y - 53, 32, 4)
-        e.fillStyle(u.faction === 'player' ? 0x76d68a : 0xe8734d); e.fillRect(p.x - 16, p.y - 53, 32 * Math.max(0, u.health / max), 4)
-      }
+      drawUnit(e, u, { time: this.currentTime, selected: state.selectedIds.includes(u.id), faction: u.faction, state: visualState(u, this.currentTime), facing: unitFacing(u) })
     })
 
     state.projectiles.forEach((shot) => {
-      if (!isExplored(shot.x, shot.y)) return
       const p = project(shot)
+      if (!isExplored(shot.x, shot.y)) return
       e.fillStyle(shot.faction === 'player' ? 0xffd166 : 0xff8f66)
       e.fillCircle(p.x, p.y - 18, 5)
       e.lineStyle(1, 0xfff1b8)
@@ -295,42 +271,22 @@ class RTSScene extends Phaser.Scene {
   }
 
   private drawBuilding(g: Phaser.GameObjects.Graphics, b: Building, selected: boolean) {
-      const p = worldToIso({ x: b.x, y: b.y })
-      const fp = BUILDING_STATS[b.type].footprint
-      const w = fp.width * ISO.tileWidth
-      const h = fp.height * ISO.tileHeight
-      const base = b.faction === 'player' ? 0x3b8fc2 : 0xb54252
-      drawIsoShadow(g, b, w * 0.8)
-      if (b.progress < 1) {
-        g.fillStyle(0x8b6d47, 0.8); diamondPath(g, p, w, h); g.fillPath()
-        g.lineStyle(3, 0xc69b62, 0.8); g.strokeRect(p.x - w / 3, p.y - h / 2, w * 0.66, h)
-        g.lineBetween(p.x - w / 2, p.y - h / 2, p.x + w / 2, p.y + h / 2)
-        g.lineBetween(p.x + w / 2, p.y - h / 2, p.x - w / 2, p.y + h / 2)
-      } else {
-        g.fillStyle(base, 1); diamondPath(g, p, w, h); g.fillPath()
-        g.fillStyle(0x6f4a34, 1); g.fillTriangle(p.x - w / 3, p.y - h / 3, p.x, p.y - h * 0.9, p.x + w / 3, p.y - h / 3)
-        g.fillStyle(0xc28b58, 1); g.fillTriangle(p.x, p.y - h * 0.9, p.x + w / 3, p.y - h / 3, p.x + w / 2, p.y - h / 2)
-        if (b.type === 'headquarters') { g.fillStyle(0x8e673d); g.fillRect(p.x - 9, p.y - 42, 18, 38); g.fillStyle(b.faction === 'player' ? PLAYER_ACCENT : ENEMY_ACCENT); g.fillRect(p.x + 12, p.y - 58, 3, 27); g.fillTriangle(p.x + 15, p.y - 58, p.x + 30, p.y - 52, p.x + 15, p.y - 46) }
-        if (b.type === 'watchtower') { g.fillStyle(0xb88345); g.fillRect(p.x - 7, p.y - 57, 14, 44); g.fillStyle(0x60432e); g.fillTriangle(p.x - 18, p.y - 57, p.x, p.y - 76, p.x + 18, p.y - 57) }
-        if (b.type === 'stable') { g.fillStyle(0xdeb36c); g.fillRect(p.x - 16, p.y - 24, 32, 18); g.lineStyle(3, 0x5d3c2a); g.lineBetween(p.x - 16, p.y - 24, p.x + 16, p.y - 6) }
-        if (b.type === 'farm') { g.fillStyle(0x6f492f); for (let i = -2; i <= 2; i++) g.fillRect(p.x + i * 9 - 2, p.y - 14, 4, 24) }
-        if (b.type === 'storage') { g.fillStyle(0x9d6e3f); g.fillRect(p.x - 20, p.y - 28, 40, 24); g.fillStyle(0xd6a056); g.fillCircle(p.x - 11, p.y - 8, 6); g.fillCircle(p.x + 10, p.y - 8, 6) }
-        if (b.type === 'barracks') { g.fillStyle(0xe6d8bb); g.fillRect(p.x - 10, p.y - 31, 20, 25); g.fillStyle(b.faction === 'player' ? PLAYER_ACCENT : ENEMY_ACCENT); g.fillRect(p.x + 15, p.y - 48, 3, 28) }
-      }
-      const max = BUILDING_STATS[b.type].maxHealth
-      if (b.progress < 1) {
-        g.fillStyle(0x1b2522); g.fillRect(p.x - w / 2, p.y - h - 14, w, 6)
-        g.fillStyle(0xe9bb66); g.fillRect(p.x - w / 2, p.y - h - 14, w * b.progress, 6)
-      } else if (b.health < max || selected) {
-        g.fillStyle(0x311a1a); g.fillRect(p.x - w / 2, p.y - h - 12, w, 5)
-        g.fillStyle(0x76d68a); g.fillRect(p.x - w / 2, p.y - h - 12, w * Math.max(0, b.health / max), 5)
-      }
-      if (b.queue.length > 0) {
-        g.fillStyle(0x1b2522); g.fillRect(p.x - w / 2, p.y + h / 2 + 6, w, 4)
-        g.fillStyle(0x6fc1ff); g.fillRect(p.x - w / 2, p.y + h / 2 + 6, w * Math.min(1, (b.queueProgress ?? 0) / 8), 4)
-      }
-      g.lineStyle(selected ? 4 : 2, selected ? 0xffe27a : (b.faction === 'player' ? PLAYER_ACCENT : ENEMY_ACCENT), selected ? 1 : 0.8)
-      diamondPath(g, p, w, h); g.strokePath()
+    drawBuildingArt(g, b, selected)
+    const p = worldToIso(b)
+    const fp = BUILDING_STATS[b.type].footprint
+    const w = fp.width * ISO.tileWidth
+    const max = BUILDING_STATS[b.type].maxHealth
+    if (b.progress < 1) {
+      g.fillStyle(0x1b2522); g.fillRect(p.x - w / 2, p.y - 58, w, 5)
+      g.fillStyle(0xe9bb66); g.fillRect(p.x - w / 2, p.y - 58, w * b.progress, 5)
+    } else if (b.health < max || selected) {
+      g.fillStyle(0x311a1a); g.fillRect(p.x - w / 2, p.y - 54, w, 4)
+      g.fillStyle(0x76d68a); g.fillRect(p.x - w / 2, p.y - 54, w * Math.max(0, b.health / max), 4)
+    }
+    if (b.queue.length > 0) {
+      g.fillStyle(0x1b2522); g.fillRect(p.x - w / 2, p.y + 20, w, 4)
+      g.fillStyle(0x6fc1ff); g.fillRect(p.x - w / 2, p.y + 20, w * Math.min(1, (b.queueProgress ?? 0) / 8), 4)
+    }
   }
 
   private drawPreview(g: Phaser.GameObjects.Graphics) {

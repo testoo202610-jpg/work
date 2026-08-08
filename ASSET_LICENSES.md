@@ -1,6 +1,6 @@
 # Asset Licenses
 
-All game visuals are generated at runtime with Phaser graphics primitives. No commercial-game artwork, audio, maps, names, characters, or code are included.
+All game visuals are original procedural/vector-style artwork generated at runtime with Phaser Graphics. The isometric terrain, buildings, resources, human units, horse/rider cavalry silhouettes, shadows, banners, and effects are authored in `src/visualArt.ts`, `src/isoRender.ts`, and `src/GameCanvas.tsx`. No commercial-game artwork, audio, maps, names, characters, or code are included.
 
 ## Audio
 
