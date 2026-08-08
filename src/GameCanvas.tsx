@@ -49,6 +49,7 @@ class RTSScene extends Phaser.Scene {
         const hit = this.hit(pointer.worldX, pointer.worldY)
         if (hit?.kind === 'node') store.gatherSelected(hit.id)
         else if (hit) store.attack(hit.id)
+        else if (store.selectedIds.length > 0 && this.keys?.shift?.isDown) store.attackMoveSelected(pointer.worldX, pointer.worldY)
         else store.moveSelected(pointer.worldX, pointer.worldY)
         return
       }
@@ -84,7 +85,8 @@ class RTSScene extends Phaser.Scene {
         const building = store.selectedIds.map((id) => store.buildings.find((b) => b.id === id)).find(Boolean)
         if (building) store.demolish(building.id)
       })
-      // Control groups (1-5)
+      // Control groups (1-5): assign on first press, select on double press;
+      // Shift adds the current selection instead of replacing the group.
       for (let i = 1; i <= 5; i++) {
         keyboard.on(`keydown-${i}`, () => {
           const store = useGameStore.getState()
@@ -92,6 +94,10 @@ class RTSScene extends Phaser.Scene {
           const lastPress = store.lastGroupKeyPressTime[i] ?? 0
           if (now - lastPress < 300) {
             store.selectFromControlGroup(i)
+          } else if (this.keys?.shift?.isDown) {
+            const existing = store.controlGroups[i]?.unitIds ?? []
+            const additions = store.selectedIds.filter((id) => store.units.some((u) => u.id === id && u.faction === 'player' && u.state !== 'dead'))
+            useGameStore.setState({ controlGroups: { ...store.controlGroups, [i]: { unitIds: [...new Set([...existing, ...additions])] } }, message: 'تم تحديث المجموعة' })
           } else {
             store.assignToControlGroup(i)
           }
