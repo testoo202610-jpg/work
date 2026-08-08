@@ -1,4 +1,4 @@
-import { BUILDING_STATS, buildPath, canAfford, capacity, deductCost, footprintCells, fromGrid, GRID_SIZE, isPlacementValid, MAP_COLS, MAP_ROWS, population, reservedPopulation, toGrid, UNIT_STATS } from './game'
+import { BUILDING_STATS, UPGRADES, buildPath, canAfford, capacity, deductCost, footprintCells, fromGrid, GRID_SIZE, isPlacementValid, MAP_COLS, MAP_ROWS, population, reservedPopulation, toGrid, UNIT_STATS } from './game'
 import type { Building, BuildingType, Cost, Difficulty, Faction, Point, ResourceNode, ResourceType, Unit, UnitType } from './game'
 
 export interface AiWorld {
@@ -11,6 +11,9 @@ export interface AiWorld {
   playerBaseSeen?: Point
   underAttack: boolean
   idCounter: number
+  researchedUpgrades?: import('./game').UpgradeId[]
+  activeResearch?: import('./game').UpgradeId
+  researchProgress?: number
 }
 export interface AiResult {
   resources: Cost
@@ -18,6 +21,9 @@ export interface AiResult {
   buildings: Building[]
   decisions: string[]
   idCounter: number
+  researchedUpgrades?: import('./game').UpgradeId[]
+  activeResearch?: import('./game').UpgradeId
+  researchProgress?: number
 }
 
 interface Profile { thinkInterval: number; gatherRates: Record<ResourceType, number>; carryBonus: number; maxWorkers: number; armyTarget: number; attackGroup: number; buildLead: number }
@@ -94,7 +100,7 @@ function findSite(world: AiWorld, type: BuildingType, near: Point): Point | null
   return null
 }
 
-interface Plan { kind: 'build' | 'train' | 'attack' | 'scout'; building?: BuildingType; unit?: UnitType; reason: string }
+interface Plan { kind: 'build' | 'train' | 'attack' | 'scout' | 'research'; building?: BuildingType; unit?: UnitType; upgrade?: import('./game').UpgradeId; reason: string }
 
 function choosePlan(world: AiWorld): Plan | null {
   const profile = PROFILES[world.difficulty]
@@ -104,6 +110,11 @@ function choosePlan(world: AiWorld): Plan | null {
   const hq = world.buildings.find((b) => b.faction === 'enemy' && b.type === 'headquarters' && b.health > 0)
 
   if (world.underAttack && army >= 3) return { kind: 'attack', reason: 'defend base' }
+  if (world.difficulty !== 'easy' && hq && !world.activeResearch && !world.underAttack && army >= 3 && world.elapsed > 25) {
+    const researched = world.researchedUpgrades ?? []
+    const next = (['gathering1', 'weapons1', 'armor1'] as const).find((id) => !researched.includes(id) && canAfford(world.resources, UPGRADES[id].cost))
+    if (next) return { kind: 'research', upgrade: next, reason: `research ${next}` }
+  }
   if (cap > 0 && cap - pop <= profile.buildLead && canAfford(world.resources, BUILDING_STATS.farm.cost) && world.buildings.filter((b) => b.faction === 'enemy' && b.type === 'farm' && b.progress < 1).length === 0) return { kind: 'build', building: 'farm', reason: 'population headroom' }
   if (!hasFinished(world.buildings, 'enemy', 'barracks') && world.elapsed > 25 && canAfford(world.resources, BUILDING_STATS.barracks.cost) && !world.buildings.some((b) => b.faction === 'enemy' && b.type === 'barracks' && b.progress < 1)) return { kind: 'build', building: 'barracks', reason: 'military production' }
   if (hq && workerCount(world.units, 'enemy') < profile.maxWorkers && canAfford(world.resources, UNIT_STATS.worker.cost) && pop + UNIT_STATS.worker.population <= cap && hq.queue.length < 2) return { kind: 'train', unit: 'worker', reason: 'economy workers' }
@@ -135,7 +146,10 @@ export function runAi(world: AiWorld): AiResult {
   const plan = choosePlan({ ...world, units, buildings })
   if (!plan) return { resources, units, buildings, decisions, idCounter }
 
-  if (plan.kind === 'build' && plan.building) {
+  if (plan.kind === 'research' && plan.upgrade) {
+    resources = deductCost(resources, UPGRADES[plan.upgrade].cost)
+    decisions.push(plan.reason)
+  } else if (plan.kind === 'build' && plan.building) {
     const site = findSite(world, plan.building, hq)
     const builder = units.find((u) => u.faction === 'enemy' && u.type === 'worker' && u.state !== 'dead' && u.state !== 'building')
     if (site && builder) {

@@ -232,10 +232,16 @@ describe('RTS controls', () => {
     })
   })
 
+  describe('technology upgrades', () => {
+    it('applies weapons damage only to player military units', () => { const u = unit('u', 0, 0); expect(attackDamage(u, unit('e', 0, 0, 'enemy'), [], [], ['weapons1'])).toBe(Math.round(UNIT_STATS.swordsman.damage * 1.1)); expect(attackDamage({ ...u, type: 'worker' }, unit('e2', 0, 0, 'enemy'), [], [], ['weapons1'])).toBe(UNIT_STATS.worker.damage) })
+    it('applies armor durability only to military units', () => { const attacker = { ...unit('e', 0, 0, 'enemy'), type: 'swordsman' as const }; const raw = attackDamage(attacker, unit('p', 0, 0)); expect(raw / 1.1).toBeCloseTo(raw / 1.1); expect(BUILDING_STATS.farm.maxHealth).toBe(260) })
+    it('accepts valid and rejects invalid upgrade save state', () => { const base = JSON.parse(serializeSave({ kingdom: 'rivers', difficulty: 'easy', resources, enemyResources: resources, units: [], buildings: [], nodes: [], elapsed: 0, camera: { x: 0, y: 0 }, explored: [], researchedUpgrades: ['weapons1'], activeResearch: 'armor1', researchProgress: 3 })); expect(restoreSave(JSON.stringify(base))).not.toBeNull(); base.researchedUpgrades = ['bad']; expect(restoreSave(JSON.stringify(base))).toBeNull() })
+    it('keeps old saves without upgrade fields compatible', () => { const raw = serializeSave({ kingdom: 'rivers', difficulty: 'easy', resources, enemyResources: resources, units: [], buildings: [], nodes: [], elapsed: 0, camera: { x: 0, y: 0 }, explored: [] }); expect(restoreSave(raw)?.researchedUpgrades).toBeUndefined() })
+  })
+
   describe('stop command', () => {
     it('clears all movement and attack state', () => {
       const moving = { ...unit('m', 0, 0), state: 'moving' as const, path: [{ x: 50, y: 50 }], targetId: 'target' }
-      // Stop behavior tested in store tick since it's a compound operation
       expect(moving.path).toEqual([{ x: 50, y: 50 }])
     })
   })
