@@ -15,12 +15,21 @@ class RTSScene extends Phaser.Scene {
   private last = 0
   private dragStart?: Phaser.Math.Vector2
   private keys!: Record<string, Phaser.Input.Keyboard.Key>
+  private terrainLayer!: Phaser.GameObjects.Graphics
+  private entityLayer!: Phaser.GameObjects.Graphics
+  private fogLayer!: Phaser.GameObjects.Graphics
+  private overlayLayer!: Phaser.GameObjects.Graphics
   constructor() { super('rts') }
 
   create() {
     sceneRegistry.set(this)
     this.cameras.main.setBounds(0, 0, MAP_WIDTH, MAP_HEIGHT)
     this.cameras.main.setZoom(0.82)
+    // persistent layers — never removed, only redrawn
+    this.terrainLayer = this.add.graphics()
+    this.entityLayer = this.add.graphics()
+    this.fogLayer = this.add.graphics()
+    this.overlayLayer = this.add.graphics()
     this.events.on(Phaser.Scenes.Events.DESTROY, () => {
       this.input.removeAllListeners()
       this.input.keyboard?.removeAllListeners()
@@ -150,9 +159,9 @@ class RTSScene extends Phaser.Scene {
   }
 
   private draw() {
-    this.children.removeAll()
+    this.terrainLayer.clear()
     const state = useGameStore.getState()
-    const g = this.add.graphics()
+    const g = this.terrainLayer
     g.fillStyle(0x1a302c)
     g.fillRect(0, 0, MAP_WIDTH, MAP_HEIGHT)
     g.fillStyle(0x254e43)
@@ -171,46 +180,51 @@ class RTSScene extends Phaser.Scene {
       g.strokeCircle(n.x, n.y, 23)
     })
 
+    this.entityLayer.clear()
+    const e = this.entityLayer
+
     state.fogMarkers
       .filter((m) => !state.buildings.some((b) => b.id === m.id && isVisible(m.x, m.y)))
       .forEach((m) => {
-        g.fillStyle(0x6d5450, 0.45)
+        e.fillStyle(0x6d5450, 0.45)
         const fp = BUILDING_STATS[m.type].footprint
-        g.fillRect(m.x - fp.width * GRID_SIZE / 2, m.y - fp.height * GRID_SIZE / 2, fp.width * GRID_SIZE, fp.height * GRID_SIZE)
-        g.lineStyle(2, 0x8a6472, 0.55)
-        g.strokeRect(m.x - fp.width * GRID_SIZE / 2, m.y - fp.height * GRID_SIZE / 2, fp.width * GRID_SIZE, fp.height * GRID_SIZE)
+        e.fillRect(m.x - fp.width * GRID_SIZE / 2, m.y - fp.height * GRID_SIZE / 2, fp.width * GRID_SIZE, fp.height * GRID_SIZE)
+        e.lineStyle(2, 0x8a6472, 0.55)
+        e.strokeRect(m.x - fp.width * GRID_SIZE / 2, m.y - fp.height * GRID_SIZE / 2, fp.width * GRID_SIZE, fp.height * GRID_SIZE)
       })
 
     state.buildings.forEach((b) => {
       if (b.faction === 'enemy' && !isVisible(b.x, b.y)) return
-      this.drawBuilding(g, b, state.selectedIds.includes(b.id))
+      this.drawBuilding(e, b, state.selectedIds.includes(b.id))
     })
 
     state.units.filter((u) => u.state !== 'dead').forEach((u) => {
       if (u.faction === 'enemy' && !isVisible(u.x, u.y)) return
       const color = u.faction === 'player' ? (UNIT_COLORS[u.type] ?? 0x58d0a8) : 0xd75a5a
-      g.fillStyle(color)
-      g.fillCircle(u.x, u.y, UNIT_STATS[u.type].radius + 1)
-      if (state.selectedIds.includes(u.id)) { g.lineStyle(3, 0xffe27a); g.strokeCircle(u.x, u.y, UNIT_STATS[u.type].radius + 7) }
-      if (u.carryingAmount && u.carryingAmount > 0.5) { g.fillStyle(colors[u.carrying ?? 'food']); g.fillCircle(u.x, u.y - 16, 4) }
+      e.fillStyle(color)
+      e.fillCircle(u.x, u.y, UNIT_STATS[u.type].radius + 1)
+      if (state.selectedIds.includes(u.id)) { e.lineStyle(3, 0xffe27a); e.strokeCircle(u.x, u.y, UNIT_STATS[u.type].radius + 7) }
+      if (u.carryingAmount && u.carryingAmount > 0.5) { e.fillStyle(colors[u.carrying ?? 'food']); e.fillCircle(u.x, u.y - 16, 4) }
       const max = UNIT_STATS[u.type].maxHealth
       if (u.health < max || state.selectedIds.includes(u.id)) {
-        g.fillStyle(0x311a1a)
-        g.fillRect(u.x - 14, u.y - 20, 28, 4)
-        g.fillStyle(u.faction === 'player' ? 0x76d68a : 0xe8734d)
-        g.fillRect(u.x - 14, u.y - 20, 28 * Math.max(0, u.health / max), 4)
+        e.fillStyle(0x311a1a)
+        e.fillRect(u.x - 14, u.y - 20, 28, 4)
+        e.fillStyle(u.faction === 'player' ? 0x76d68a : 0xe8734d)
+        e.fillRect(u.x - 14, u.y - 20, 28 * Math.max(0, u.health / max), 4)
       }
     })
 
     state.projectiles.forEach((p) => {
       if (!isExplored(p.x, p.y)) return
-      g.fillStyle(p.faction === 'player' ? 0xffd166 : 0xff8f66)
-      g.fillCircle(p.x, p.y, 5)
-      g.lineStyle(1, 0xfff1b8)
-      g.strokeCircle(p.x, p.y, 7)
+      e.fillStyle(p.faction === 'player' ? 0xffd166 : 0xff8f66)
+      e.fillCircle(p.x, p.y, 5)
+      e.lineStyle(1, 0xfff1b8)
+      e.strokeCircle(p.x, p.y, 7)
     })
 
-    if (state.placement && state.preview) this.drawPreview(g)
+    this.overlayLayer.clear()
+    const o = this.overlayLayer
+    if (state.placement && state.preview) this.drawPreview(o)
     if (this.dragStart) {
       const p = this.input.activePointer
       const box = this.add.rectangle((this.dragStart.x + p.worldX) / 2, (this.dragStart.y + p.worldY) / 2,
@@ -220,7 +234,7 @@ class RTSScene extends Phaser.Scene {
     }
 
     // fog overlay last (covers everything)
-    const fog = this.add.graphics()
+    const fog = this.fogLayer
     fog.fillStyle(DEFAULT_FOG_COLOR, 1)
     for (let row = 0; row < 30; row++) for (let col = 0; col < 53; col++) {
       const key = `${col},${row}`
