@@ -1,0 +1,20 @@
+.menu { background: radial-gradient(ellipse at 50% 10%, #496d58 0%, #172e2d 38%, #091416 82%), linear-gradient(135deg, #1e4639, #0b171a); }
+.brand-mark { text-shadow: 0 0 28px #e9bb6688; }
+.menu h1 { text-shadow: 0 5px 0 #081715, 0 12px 35px #0009; }
+.menu-card { border-color: #a4834f; background: linear-gradient(145deg, rgba(26,57,48,.97), rgba(12,30,29,.97)); border-radius: 10px; box-shadow: 0 20px 80px #000b, inset 0 0 0 5px #0b201b88; }
+.kingdom { background: linear-gradient(145deg, #1e4438, #102a27); border-radius: 5px; transition: transform .15s, border-color .15s; }
+.kingdom:hover { transform: translateY(-3px); }
+.kingdom.active, .difficulty button.active { box-shadow: 0 0 18px #e9bb6633; }
+.primary { background: linear-gradient(#f5d98b, #d79d4e); border-radius: 4px; box-shadow: 0 5px 18px #e9bb6640; }
+.game-shell { background: #081312; }
+.topbar { border-bottom: 2px solid #a4834f; background: linear-gradient(180deg, #1a3930, #10251f); box-shadow: 0 4px 18px #0008; }
+.resource-dot { border-radius: 3px; transform: rotate(45deg); box-shadow: 0 0 5px currentColor; }
+.game-canvas { background: radial-gradient(ellipse at center, #315e4c, #122c28); }
+.side-panel { border-right: 2px solid #a4834f; background: linear-gradient(180deg, #17342c, #0e241f); box-shadow: -6px 0 22px #0006; }
+.selected-card { background: linear-gradient(145deg, #245242, #18372f); border-color: #66856a; border-radius: 5px; box-shadow: inset 0 0 15px #0003; }
+.selected-card .avatar { background: #36725e; border: 2px solid #c79f59; border-radius: 8px; }
+.commands button { background: #1c4034; border-radius: 4px; }
+.commands button:hover { background: #285844; }
+.minimap { border-color: #d0b276; box-shadow: 0 4px 18px #0009; }
+.alerts button { border-radius: 4px; box-shadow: 0 4px 14px #0007; }
+.result-card { background: linear-gradient(145deg, #234d3d, #112d26); border-radius: 8px; box-shadow: 0 15px 60px #000b; }

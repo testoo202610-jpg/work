@@ -12,6 +12,7 @@ if (typeof window !== 'undefined') {
   if (window.__RTS_TEST_TIMESCALE__) useGameStore.setState({})
 }
 import './App.css'
+import './visual-overhaul.css'
 
 const labels = { food: 'طعام', wood: 'خشب', stone: 'حجر', gold: 'ذهب' } as const
 const unitLabel: Record<UnitType, string> = { worker: 'عامل', swordsman: 'مقاتل', archer: 'رامٍ', cavalry: 'فارس', commander: 'قائد' }
