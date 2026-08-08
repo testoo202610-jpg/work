@@ -12,12 +12,13 @@ export interface BuildingFootprint { width: number; height: number }
 export interface PathGrid { width: number; height: number; blocked: boolean[][] }
 export interface UnitStats { maxHealth: number; speed: number; damage: number; range: number; cooldown: number; radius: number; cost: Cost; population: number }
 export interface BuildingStats { maxHealth: number; armor: number; cost: Cost; population: number; buildTime: number }
-export type UnitState = 'idle' | 'moving' | 'gathering' | 'returning' | 'attacking' | 'building' | 'repairing' | 'dead'
-export interface Unit { id: string; type: UnitType; faction: Faction; x: number; y: number; health: number; targetId?: string; carrying?: ResourceType; carryingAmount?: number; path?: Point[]; attackCooldown?: number; state: UnitState }
-export interface Building { id: string; type: BuildingType; faction: Faction; x: number; y: number; health: number; progress: number; queue: UnitType[]; builderId?: string; queueProgress?: number }
+export type UnitState = 'idle' | 'moving' | 'gathering' | 'returning' | 'attacking' | 'building' | 'repairing' | 'dead' | 'attackMoving' | 'holding'
+export interface Unit { id: string; type: UnitType; faction: Faction; x: number; y: number; health: number; targetId?: string; carrying?: ResourceType; carryingAmount?: number; path?: Point[]; attackCooldown?: number; state: UnitState; commandDestination?: Point; holdPosition?: Point }
+export interface Building { id: string; type: BuildingType; faction: Faction; x: number; y: number; health: number; progress: number; queue: UnitType[]; builderId?: string; queueProgress?: number; rallyPoint?: Point }
 export interface ResourceNode { id: string; type: ResourceType; x: number; y: number; amount: number; maxAmount: number }
 export interface Projectile { id: string; attackerId: string; attackerType: UnitType | 'watchtower'; faction: Faction; targetId: string; x: number; y: number; speed: number }
-export interface SaveData { version: 1; kingdom: Kingdom; difficulty: Difficulty; resources: Cost; enemyResources: Cost; units: Unit[]; buildings: Building[]; nodes: ResourceNode[]; elapsed: number; camera: Point; explored: string[] }
+export interface ControlGroup { unitIds: string[] }
+export interface SaveData { version: 1; kingdom: Kingdom; difficulty: Difficulty; resources: Cost; enemyResources: Cost; units: Unit[]; buildings: Building[]; nodes: ResourceNode[]; elapsed: number; camera: Point; explored: string[]; controlGroups?: Record<number, ControlGroup> }
 
 export const GRID_SIZE = 40
 export const MAP_COLS = 53
@@ -43,6 +44,8 @@ export const BUILDING_VISION_RADIUS = 7.5
 export const TOWER_VISION_RADIUS = 10
 export const OUTDATED_MARKER_SECONDS = 90
 export const DEFAULT_FOG_COLOR = 0x0b1613
+export const HOLD_RANGE = 200
+export const ATTACK_MOVE_RANGE = 340
 
 export const KINGDOMS: Record<Kingdom, { name: string; color: number; description: string; bonuses: string }> = {
   flame: { name: 'مملكة اللهب', color: 0xef6c4d, description: 'محاربون شرسون يضربون بقوة.', bonuses: '+10٪ ضرر عسكري' },
@@ -232,7 +235,146 @@ export function gatherNode(node: ResourceNode, requested: number): { node: Resou
 export function isVictory(buildings: Building[]): boolean { return !buildings.some((b) => b.faction === 'enemy' && b.type === 'headquarters' && b.health > 0) }
 export function isDefeat(buildings: Building[]): boolean { return !buildings.some((b) => b.faction === 'player' && b.type === 'headquarters' && b.health > 0) }
 export function serializeSave(data: Omit<SaveData, 'version'>): string { return JSON.stringify({ ...data, version: 1 }) }
-export function restoreSave(raw: string): SaveData | null { try { const parsed: unknown = JSON.parse(raw); if (!parsed || typeof parsed !== 'object' || (parsed as { version?: unknown }).version !== 1) return null; return parsed as SaveData } catch { return null } }
+
+// Deep SaveData validation
+function isValidControlGroups(value: unknown): value is Record<number, ControlGroup> {
+  if (value === undefined) return true
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  return Object.entries(value).every(([key, group]) => /^[1-5]$/.test(key) && !!group && typeof group === 'object' && Array.isArray((group as ControlGroup).unitIds) && (group as ControlGroup).unitIds.every((id) => typeof id === 'string' && id.length > 0))
+}
+
+function isFiniteNonnegative(n: unknown): n is number {
+  return typeof n === 'number' && Number.isFinite(n) && n >= 0
+}
+
+function isValidKingdom(k: unknown): k is Kingdom {
+  return k === 'flame' || k === 'rivers' || k === 'mountains'
+}
+
+function isValidDifficulty(d: unknown): d is Difficulty {
+  return d === 'easy' || d === 'medium' || d === 'hard'
+}
+
+function isValidResourceType(r: unknown): r is ResourceType {
+  return r === 'food' || r === 'wood' || r === 'stone' || r === 'gold'
+}
+
+function isValidUnitType(u: unknown): u is UnitType {
+  return u === 'worker' || u === 'swordsman' || u === 'archer' || u === 'cavalry' || u === 'commander'
+}
+
+function isValidBuildingType(b: unknown): b is BuildingType {
+  return b === 'headquarters' || b === 'barracks' || b === 'stable' || b === 'farm' || b === 'storage' || b === 'watchtower' || b === 'wall'
+}
+
+function isValidUnitState(s: unknown): s is UnitState {
+  const validStates: UnitState[] = ['idle', 'moving', 'gathering', 'returning', 'attacking', 'building', 'repairing', 'dead', 'attackMoving', 'holding']
+  return validStates.includes(s as UnitState)
+}
+
+function isValidPoint(p: unknown): p is Point {
+  return !!p && typeof p === 'object' && isFiniteNonnegative((p as Point).x) && isFiniteNonnegative((p as Point).y)
+}
+
+function isValidCost(c: unknown): c is Cost {
+  return !!c && typeof c === 'object' && ['food', 'wood', 'stone', 'gold'].every((key) => isFiniteNonnegative((c as Cost)[key as ResourceType]))
+}
+
+function isValidUnit(u: unknown): u is Unit {
+  if (!u || typeof u !== 'object') return false
+  const unit = u as Unit
+  return typeof unit.id === 'string' && unit.id.length > 0 &&
+    isValidUnitType(unit.type) &&
+    (unit.faction === 'player' || unit.faction === 'enemy') &&
+    isFiniteNonnegative(unit.x) && isFiniteNonnegative(unit.y) &&
+    isFiniteNonnegative(unit.health) && unit.health <= UNIT_STATS[unit.type].maxHealth * 1.5 &&
+    isValidUnitState(unit.state) &&
+    (unit.targetId === undefined || typeof unit.targetId === 'string') &&
+    (unit.carrying === undefined || isValidResourceType(unit.carrying)) &&
+    (unit.carryingAmount === undefined || isFiniteNonnegative(unit.carryingAmount)) &&
+    (unit.path === undefined || Array.isArray(unit.path)) &&
+    (unit.attackCooldown === undefined || isFiniteNonnegative(unit.attackCooldown)) &&
+    (unit.commandDestination === undefined || isValidPoint(unit.commandDestination)) &&
+    (unit.holdPosition === undefined || isValidPoint(unit.holdPosition))
+}
+
+function isValidBuilding(b: unknown): b is Building {
+  if (!b || typeof b !== 'object') return false
+  const building = b as Building
+  return typeof building.id === 'string' && building.id.length > 0 &&
+    isValidBuildingType(building.type) &&
+    (building.faction === 'player' || building.faction === 'enemy') &&
+    isFiniteNonnegative(building.x) && isFiniteNonnegative(building.y) &&
+    isFiniteNonnegative(building.health) && building.health <= BUILDING_STATS[building.type].maxHealth * 1.5 &&
+    isFiniteNonnegative(building.progress) && building.progress >= 0 && building.progress <= 1 &&
+    Array.isArray(building.queue) && building.queue.every(isValidUnitType) &&
+    (building.builderId === undefined || typeof building.builderId === 'string') &&
+    (building.queueProgress === undefined || isFiniteNonnegative(building.queueProgress)) &&
+    (building.rallyPoint === undefined || isValidPoint(building.rallyPoint))
+}
+
+function isValidResourceNode(n: unknown): n is ResourceNode {
+  if (!n || typeof n !== 'object') return false
+  const node = n as ResourceNode
+  return typeof node.id === 'string' && node.id.length > 0 &&
+    isValidResourceType(node.type) &&
+    isFiniteNonnegative(node.x) && isFiniteNonnegative(node.y) &&
+    isFiniteNonnegative(node.amount) && node.amount <= node.maxAmount * 1.1 &&
+    isFiniteNonnegative(node.maxAmount)
+}
+
+function hasDuplicateIds(items: { id: string }[]): boolean {
+  const seen = new Set<string>()
+  for (const item of items) {
+    if (seen.has(item.id)) return true
+    seen.add(item.id)
+  }
+  return false
+}
+
+function isValidSaveData(data: unknown): data is SaveData {
+  if (!data || typeof data !== 'object') return false
+  const save = data as SaveData
+
+  // Version check
+  if (save.version !== 1) return false
+
+  // Enums
+  if (!isValidKingdom(save.kingdom) || !isValidDifficulty(save.difficulty)) return false
+
+  // Resources
+  if (!isValidCost(save.resources) || !isValidCost(save.enemyResources)) return false
+
+  // Collections
+  if (!Array.isArray(save.units) || !save.units.every(isValidUnit)) return false
+  if (!Array.isArray(save.buildings) || !save.buildings.every(isValidBuilding)) return false
+  if (!Array.isArray(save.nodes) || !save.nodes.every(isValidResourceNode)) return false
+
+  // Duplicate ID checks
+  if (hasDuplicateIds(save.units) || hasDuplicateIds(save.buildings) || hasDuplicateIds(save.nodes)) return false
+
+  // Elapsed and camera
+  if (!isFiniteNonnegative(save.elapsed)) return false
+  if (!isValidPoint(save.camera)) return false
+
+  // Explored cells
+  if (!Array.isArray(save.explored) || !save.explored.every((cell) => typeof cell === 'string' && /^\d+,\d+$/.test(cell))) return false
+
+  // Control groups
+  if (!isValidControlGroups(save.controlGroups)) return false
+
+  return true
+}
+
+export function restoreSave(raw: string): SaveData | null {
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (!isValidSaveData(parsed)) return null
+    return parsed as SaveData
+  } catch {
+    return null
+  }
+}
 
 export function createProjectile(attackerId: string, attackerType: UnitType | 'watchtower', faction: Faction, target: Unit | Building, x: number, y: number, id: string): Projectile {
   return { id, attackerId, attackerType, faction, targetId: target.id, x, y, speed: 420 }
@@ -245,3 +387,51 @@ export function advanceProjectile(projectile: Projectile, target: Point, dt: num
   return { ...projectile, x: projectile.x + ((target.x - projectile.x) / distance) * step, y: projectile.y + ((target.y - projectile.y) / distance) * step }
 }
 export function projectileReached(projectile: Projectile, target: Point): boolean { return Math.hypot(target.x - projectile.x, target.y - projectile.y) < 2 }
+
+// Control Groups Management
+export function purgeControlGroup(group: ControlGroup, units: Unit[]): ControlGroup {
+  const liveIds = new Set(units.filter((u) => u.faction === 'player' && u.state !== 'dead').map((u) => u.id))
+  return { unitIds: [...new Set(group.unitIds.filter((id) => liveIds.has(id)))] }
+}
+
+// Rally Points
+const TRAINABLE_BUILDINGS: BuildingType[] = ['headquarters', 'barracks', 'stable']
+export function canSetRallyPoint(building: Building): boolean {
+  return TRAINABLE_BUILDINGS.includes(building.type) && building.faction === 'player' && building.progress >= 1 && building.health > 0
+}
+export function isValidRallyPointLocation(x: number, y: number): boolean {
+  return x >= 0 && y >= 0 && x <= MAP_WIDTH && y <= MAP_HEIGHT
+}
+export function setRallyPoint(building: Building, x: number, y: number): Building {
+  if (!canSetRallyPoint(building) || !isValidRallyPointLocation(x, y)) return building
+  return { ...building, rallyPoint: { x, y } }
+}
+export function clearRallyPoint(building: Building): Building {
+  return { ...building, rallyPoint: undefined }
+}
+
+// Attack Move
+export function canAttackMove(unit: Unit): boolean {
+  return unit.faction === 'player' && unit.state !== 'dead' && (unit.type === 'swordsman' || unit.type === 'archer' || unit.type === 'cavalry' || unit.type === 'commander')
+}
+export function findNearestEnemyInRange(unit: Unit, units: Unit[], buildings: Building[]): Unit | Building | undefined {
+  const candidates: Array<Unit | Building> = [
+    ...units.filter((u) => u.faction !== unit.faction && u.state !== 'dead' && Math.hypot(u.x - unit.x, u.y - unit.y) < ATTACK_MOVE_RANGE),
+    ...buildings.filter((b) => b.faction !== unit.faction && b.health > 0 && Math.hypot(b.x - unit.x, b.y - unit.y) < ATTACK_MOVE_RANGE),
+  ]
+  candidates.sort((a, b) => Math.hypot(a.x - unit.x, a.y - unit.y) - Math.hypot(b.x - unit.x, b.y - unit.y))
+  return candidates[0]
+}
+
+// Hold Position
+export function canHold(unit: Unit): boolean {
+  return unit.faction === 'player' && unit.state !== 'dead' && (unit.type === 'swordsman' || unit.type === 'archer' || unit.type === 'cavalry' || unit.type === 'commander')
+}
+export function holdPositionAt(unit: Unit): Unit {
+  if (!canHold(unit)) return unit
+  return { ...unit, state: 'holding', holdPosition: { x: unit.x, y: unit.y }, commandDestination: undefined, targetId: undefined, path: [] }
+}
+export function isOutOfHoldRange(unit: Unit): boolean {
+  if (unit.state !== 'holding' || !unit.holdPosition) return false
+  return Math.hypot(unit.x - unit.holdPosition.x, unit.y - unit.holdPosition.y) > HOLD_RANGE
+}

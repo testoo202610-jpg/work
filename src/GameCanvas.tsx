@@ -45,6 +45,7 @@ class RTSScene extends Phaser.Scene {
       const store = useGameStore.getState()
       if (pointer.button === 2) {
         if (store.placement) { store.cancelPlacement(); return }
+        if (store.rallyPointBuildingId) { store.applyRallyPoint(pointer.worldX, pointer.worldY); return }
         const hit = this.hit(pointer.worldX, pointer.worldY)
         if (hit?.kind === 'node') store.gatherSelected(hit.id)
         else if (hit) store.attack(hit.id)
@@ -82,6 +83,35 @@ class RTSScene extends Phaser.Scene {
         const store = useGameStore.getState()
         const building = store.selectedIds.map((id) => store.buildings.find((b) => b.id === id)).find(Boolean)
         if (building) store.demolish(building.id)
+      })
+      // Control groups (1-5)
+      for (let i = 1; i <= 5; i++) {
+        keyboard.on(`keydown-${i}`, () => {
+          const store = useGameStore.getState()
+          const now = Date.now()
+          const lastPress = store.lastGroupKeyPressTime[i] ?? 0
+          if (now - lastPress < 300) {
+            store.selectFromControlGroup(i)
+          } else {
+            store.assignToControlGroup(i)
+          }
+          store.lastGroupKeyPressTime[i] = now
+        })
+      }
+      // RTS commands: Stop (S), Hold (H), Attack Move (A with right-click)
+      // Stop uses S only when units are selected to avoid camera conflict
+      keyboard.on('keydown-S', () => {
+        const store = useGameStore.getState()
+        if (store.selectedIds.length > 0) {
+          store.stopSelected()
+        }
+        // Otherwise S is used for camera movement (down)
+      })
+      keyboard.on('keydown-H', () => useGameStore.getState().holdSelected())
+      keyboard.on('keydown-R', () => {
+        const store = useGameStore.getState()
+        const building = store.selectedIds.map((id) => store.buildings.find((b) => b.id === id)).find(Boolean)
+        if (building) store.setRallyPointMode(building.id)
       })
     }
   }

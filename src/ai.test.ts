@@ -55,4 +55,10 @@ describe('enemy AI', () => {
       expect(BUILDING_STATS[placed.type].buildTime).toBeGreaterThan(0)
     }
   })
+  it('does not award free resources for a worker merely in gathering state', () => {
+    const gathering = { ...worker('g'), state: 'gathering' as const, targetId: 'f' }
+    const result = runAi({ ...base, difficulty: 'medium', units: [gathering] })
+    expect(result.resources.food).toBeLessThanOrEqual(base.resources.food)
+    expect(result.resources.food).toBe(base.resources.food - UNIT_STATS.worker.cost.food)
+  })
 })

@@ -18,5 +18,8 @@ export const MSG = {
   demolishing: 'جارٍ الهدم…',
   wrongBuilding: 'المبنى لا يدعم هذه الوحدة',
   needStable: 'تحتاج إسطبلًا لتدريب الفرسان',
+  groupAssigned: 'تم حفظ المجموعة',
+  groupSelected: 'تم اختيار المجموعة',
+  rallySet: 'تم تعيين نقطة التجمع',
 } as const
 export type MsgKey = keyof typeof MSG

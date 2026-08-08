@@ -1,4 +1,4 @@
-import { addCost, BUILDING_STATS, buildPath, canAfford, capacity, deductCost, footprintCells, fromGrid, GRID_SIZE, isPlacementValid, MAP_COLS, MAP_ROWS, population, reservedPopulation, toGrid, UNIT_STATS } from './game'
+import { BUILDING_STATS, buildPath, canAfford, capacity, deductCost, footprintCells, fromGrid, GRID_SIZE, isPlacementValid, MAP_COLS, MAP_ROWS, population, reservedPopulation, toGrid, UNIT_STATS } from './game'
 import type { Building, BuildingType, Cost, Difficulty, Faction, Point, ResourceNode, ResourceType, Unit, UnitType } from './game'
 
 export interface AiWorld {
@@ -123,7 +123,6 @@ function choosePlan(world: AiWorld): Plan | null {
 }
 
 export function runAi(world: AiWorld): AiResult {
-  const profile = PROFILES[world.difficulty]
   let resources = { ...world.resources }
   let units = assignWorkers(world)
   let buildings = world.buildings.map((b) => ({ ...b }))
@@ -132,15 +131,6 @@ export function runAi(world: AiWorld): AiResult {
 
   const hq = buildings.find((b) => b.faction === 'enemy' && b.type === 'headquarters' && b.health > 0)
   if (!hq) return { resources, units, buildings, decisions, idCounter }
-
-  // Gathering trickle: workers deposit via real movement, but to keep bookkeeping simple each gathering worker credits fractional income.
-  units.forEach((u) => {
-    if (u.faction !== 'enemy' || u.type !== 'worker' || u.state !== 'gathering') return
-    const node = world.nodes.find((n) => n.id === u.targetId)
-    if (!node || node.amount <= 0) return
-    const rate = profile.gatherRates[node.type] / 25
-    resources = addCost(resources, { food: node.type === 'food' ? rate : 0, wood: node.type === 'wood' ? rate : 0, stone: node.type === 'stone' ? rate : 0, gold: node.type === 'gold' ? rate : 0 })
-  })
 
   const plan = choosePlan({ ...world, units, buildings })
   if (!plan) return { resources, units, buildings, decisions, idCounter }

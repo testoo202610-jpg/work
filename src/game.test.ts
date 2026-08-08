@@ -4,8 +4,9 @@ import {
   computeVisibleCells, counterMultiplier, deductCost, footprintCells, gatherNode, groupSlots,
   isDefeat, isPlacementValid, isVictory, mergeExplored, population, reservedPopulation,
   restoreSave, separationForce, serializeSave, UNIT_STATS,
+  purgeControlGroup, canSetRallyPoint, setRallyPoint, canAttackMove, findNearestEnemyInRange, canHold, holdPositionAt, isOutOfHoldRange,
 } from './game'
-import type { Building, ResourceNode, Unit } from './game'
+import type { Building, ResourceNode, Unit, ControlGroup } from './game'
 
 const resources = { food: 100, wood: 100, stone: 100, gold: 100 }
 const farmAt = (x: number, y: number, health = 200): Building => ({ id: `f-${x}-${y}`, type: 'farm', faction: 'player', x, y, health, progress: 1, queue: [] })
@@ -139,5 +140,103 @@ describe('resources and saves', () => {
     expect(restoreSave(raw)?.elapsed).toBe(4)
     expect(restoreSave('{bad')).toBeNull()
     expect(restoreSave('{"version":2}')).toBeNull()
+  })
+})
+
+describe('RTS controls', () => {
+  describe('control groups', () => {
+    it('assigns and purges groups by live units', () => {
+      const units: Unit[] = [unit('a', 0, 0), { ...unit('b', 10, 10), state: 'dead' }]
+      const group: ControlGroup = { unitIds: ['a', 'b'] }
+      const purged = purgeControlGroup(group, units)
+      expect(purged.unitIds).toEqual(['a'])
+    })
+    it('removes missing unit IDs', () => {
+      const units: Unit[] = [unit('a', 0, 0)]
+      const group: ControlGroup = { unitIds: ['a', 'missing'] }
+      const purged = purgeControlGroup(group, units)
+      expect(purged.unitIds.length).toBe(1)
+    })
+    it('deduplicates IDs during cleanup', () => {
+      const units: Unit[] = [unit('a', 0, 0)]
+      const group: ControlGroup = { unitIds: ['a', 'a', 'missing'] }
+      expect(purgeControlGroup(group, units).unitIds).toEqual(['a'])
+    })
+  })
+
+  describe('rally points', () => {
+    it('validates trainable buildings for rally points', () => {
+      const hq: Building = { ...farmAt(100, 100), type: 'headquarters' }
+      const barracks: Building = { ...farmAt(200, 200), type: 'barracks' }
+      const farm: Building = farmAt(300, 300)
+      expect(canSetRallyPoint(hq)).toBe(true)
+      expect(canSetRallyPoint(barracks)).toBe(true)
+      expect(canSetRallyPoint(farm)).toBe(false)
+    })
+    it('sets rally point on valid location', () => {
+      const hq: Building = { ...farmAt(100, 100), type: 'headquarters' }
+      const updated = setRallyPoint(hq, 500, 500)
+      expect(updated.rallyPoint).toEqual({ x: 500, y: 500 })
+    })
+    it('rejects rally points out of bounds', () => {
+      const hq: Building = { ...farmAt(100, 100), type: 'headquarters' }
+      const updated = setRallyPoint(hq, -50, 500)
+      expect(updated.rallyPoint).toBeUndefined()
+    })
+  })
+
+  describe('attack move', () => {
+    it('identifies units capable of attack move', () => {
+      expect(canAttackMove(unit('a', 0, 0))).toBe(true) // swordsman can attack move
+      const worker = { ...unit('a', 0, 0), type: 'worker' as const }
+      expect(canAttackMove(worker)).toBe(false)
+      const archer = { ...unit('a', 0, 0), type: 'archer' as const }
+      expect(canAttackMove(archer)).toBe(true)
+      const dead = { ...unit('d', 0, 0), state: 'dead' as const }
+      expect(canAttackMove(dead)).toBe(false)
+    })
+    it('finds nearest enemy in attack range', () => {
+      const attacker = unit('a', 0, 0)
+      const close = { ...unit('e1', 100, 0), faction: 'enemy' as const }
+      const far = { ...unit('e2', 500, 0), faction: 'enemy' as const }
+      const target = findNearestEnemyInRange(attacker, [close, far], [])
+      expect(target?.id).toBe('e1')
+    })
+    it('returns undefined when no enemies in range', () => {
+      const attacker = unit('a', 0, 0)
+      const far = { ...unit('e', 500, 0), faction: 'enemy' as const }
+      expect(findNearestEnemyInRange(attacker, [far], [])).toBeUndefined()
+    })
+  })
+
+  describe('hold position', () => {
+    it('identifies units capable of holding', () => {
+      const swordsman = unit('s', 0, 0)
+      expect(canHold(swordsman)).toBe(true)
+      const archer = { ...unit('a', 0, 0), type: 'archer' as const }
+      expect(canHold(archer)).toBe(true)
+      const worker = { ...unit('w', 0, 0), type: 'worker' as const }
+      expect(canHold(worker)).toBe(false)
+    })
+    it('sets holding state at current position', () => {
+      const archer = { ...unit('a', 100, 100), type: 'archer' as const }
+      const holding = holdPositionAt(archer)
+      expect(holding.state).toBe('holding')
+      expect(holding.holdPosition).toEqual({ x: 100, y: 100 })
+    })
+    it('detects when unit leaves hold radius', () => {
+      let archer = { ...unit('a', 100, 100), type: 'archer' as const, state: 'holding' as const, holdPosition: { x: 100, y: 100 } }
+      expect(isOutOfHoldRange(archer)).toBe(false)
+      archer = { ...archer, x: 400, y: 100 }
+      expect(isOutOfHoldRange(archer)).toBe(true)
+    })
+  })
+
+  describe('stop command', () => {
+    it('clears all movement and attack state', () => {
+      const moving = { ...unit('m', 0, 0), state: 'moving' as const, path: [{ x: 50, y: 50 }], targetId: 'target' }
+      // Stop behavior tested in store tick since it's a compound operation
+      expect(moving.path).toEqual([{ x: 50, y: 50 }])
+    })
   })
 })

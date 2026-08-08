@@ -5,8 +5,9 @@ import {
   INITIAL_RESOURCES, isDefeat, isVictory, MAP_COLS, MAP_HEIGHT, MAP_ROWS, MAP_WIDTH,
   mergeExplored, OUTDATED_MARKER_SECONDS, population, projectileReached, REPAIR_HP_PER_SECOND,
   reservedPopulation, restoreSave, separationForce, serializeSave, toGrid, UNIT_STATS,
+  purgeControlGroup, setRallyPoint, canAttackMove, canHold, holdPositionAt,
 } from './game'
-import type { Building, BuildingType, Cost, Difficulty, GridPoint, Kingdom, Point, Projectile, ResourceNode, Unit, UnitType } from './game'
+import type { Building, BuildingType, Cost, ControlGroup, Difficulty, GridPoint, Kingdom, Point, Projectile, ResourceNode, Unit, UnitType } from './game'
 import { aiProfile, runAi } from './ai'
 import { MSG } from './i18n'
 import { configureAudio, playCue, startMusic } from './audio'
@@ -28,6 +29,7 @@ interface GameState {
   phase: 'menu' | 'playing' | 'victory' | 'defeat'
   selectedIds: string[]; message: string
   placement?: BuildingType; preview?: Point; demolishArmedId?: string; aiIdCounter: number; lastIdleAlert: number
+  controlGroups: Record<number, ControlGroup>; rallyPointBuildingId?: string; lastGroupKeyPressTime: Record<number, number>
   settings: Settings; showSettings: boolean
   setSetup: (kingdom: Kingdom, difficulty: Difficulty) => void
   start: () => void; select: (ids: string[], additive?: boolean) => void
@@ -42,6 +44,9 @@ interface GameState {
   save: () => void; load: () => boolean
   setCamera: (camera: Point) => void; clearMessage: () => void
   updateSettings: (partial: Partial<Settings>) => void; toggleSettings: () => void
+  assignToControlGroup: (groupNum: number) => void; selectFromControlGroup: (groupNum: number) => void
+  setRallyPointMode: (buildingId?: string) => void; applyRallyPoint: (x: number, y: number) => void
+  stopSelected: () => void; holdSelected: () => void; attackMoveSelected: (x: number, y: number) => void
 }
 
 const trainingTime = (type: UnitType) => type === 'worker' ? 5 : type === 'cavalry' ? 12 : type === 'commander' ? 20 : 8
@@ -137,6 +142,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   elapsed: 0, camera: { x: 640, y: 440 }, explored: [], visible: [], fogMarkers: [],
   phase: 'menu', selectedIds: [], message: '',
   placement: undefined, preview: undefined, demolishArmedId: undefined, aiIdCounter: 1, lastIdleAlert: -60,
+  controlGroups: {}, rallyPointBuildingId: undefined, lastGroupKeyPressTime: {},
   settings: loadSettings(), showSettings: false,
 
   setSetup: (kingdom, difficulty) => set({ kingdom, difficulty }),
@@ -148,6 +154,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       units: [...initialUnits(), ...initialEnemyUnits()], buildings: initialBuildings(), nodes: initialNodes(), projectiles: [],
       elapsed: 0, camera: { x: 640, y: 440 }, explored: [], visible: [], fogMarkers: [],
       selectedIds: [], placement: undefined, preview: undefined, demolishArmedId: undefined, aiIdCounter: 1, message: '',
+      controlGroups: {}, rallyPointBuildingId: undefined, lastGroupKeyPressTime: {},
     })
     startMusic()
   },
@@ -311,6 +318,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         kingdom: state.kingdom, difficulty: state.difficulty, resources: state.resources,
         enemyResources: state.enemyResources, units: state.units, buildings: state.buildings,
         nodes: state.nodes, elapsed: state.elapsed, camera: state.camera, explored: state.explored,
+        controlGroups: state.controlGroups,
       }))
       set({ message: MSG.saved })
       playCue('click')
@@ -322,6 +330,16 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (!raw) return false
     const data = restoreSave(raw)
     if (!data) { set({ message: MSG.saveCorrupt }); return false }
+    // Sanitize control groups: remove dead units, validate group keys
+    const sanitizedGroups: Record<number, ControlGroup> = {}
+    if (data.controlGroups) {
+      Object.entries(data.controlGroups).forEach(([keyStr, group]) => {
+        const key = parseInt(keyStr, 10)
+        if (key >= 1 && key <= 5) {
+          sanitizedGroups[key] = purgeControlGroup(group, data.units)
+        }
+      })
+    }
     set({
       kingdom: data.kingdom, difficulty: data.difficulty, resources: data.resources,
       enemyResources: data.enemyResources ?? { ...INITIAL_RESOURCES },
@@ -330,9 +348,71 @@ export const useGameStore = create<GameState>((set, get) => ({
       projectiles: [], visible: [], fogMarkers: [], selectedIds: [],
       placement: undefined, preview: undefined, demolishArmedId: undefined,
       phase: 'playing', message: MSG.loaded,
+      controlGroups: sanitizedGroups, rallyPointBuildingId: undefined, lastGroupKeyPressTime: {},
     })
     startMusic()
     return true
+  },
+
+  assignToControlGroup: (groupNum) => {
+    if (groupNum < 1 || groupNum > 5) return
+    const state = get()
+    const group: ControlGroup = { unitIds: [...new Set(state.selectedIds.filter((id) => state.units.some((u) => u.id === id && u.faction === 'player' && u.state !== 'dead')))] }
+    set({ controlGroups: { ...state.controlGroups, [groupNum]: group }, message: MSG.groupAssigned })
+  },
+
+  selectFromControlGroup: (groupNum) => {
+    if (groupNum < 1 || groupNum > 5) return
+    const state = get()
+    const group = state.controlGroups[groupNum]
+    if (!group) return
+    const purged = purgeControlGroup(group, state.units)
+    const liveIds = purged.unitIds
+    if (!liveIds.length) { set({ controlGroups: { ...state.controlGroups, [groupNum]: purged } }); return }
+    set({ selectedIds: liveIds, controlGroups: { ...state.controlGroups, [groupNum]: purged }, message: MSG.groupSelected })
+  },
+
+  setRallyPointMode: (buildingId) => set({ rallyPointBuildingId: buildingId }),
+
+  applyRallyPoint: (x, y) => {
+    const state = get()
+    if (!state.rallyPointBuildingId) return
+    const building = state.buildings.find((b) => b.id === state.rallyPointBuildingId)
+    if (!building) return
+    const updated = setRallyPoint(building, x, y)
+    if (!updated.rallyPoint) return
+    set({
+      buildings: state.buildings.map((b) => b.id === building.id ? updated : b),
+      rallyPointBuildingId: undefined,
+      message: MSG.rallySet,
+    })
+  },
+
+  stopSelected: () => {
+    const state = get()
+    const updated = state.units.map((u) =>
+      state.selectedIds.includes(u.id) ? { ...u, state: 'idle' as const, path: [], targetId: undefined, carryingAmount: 0 } : u,
+    )
+    set({ units: updated })
+  },
+
+  holdSelected: () => {
+    const state = get()
+    const updated = state.units.map((u) =>
+      state.selectedIds.includes(u.id) && canHold(u) ? holdPositionAt(u) : u,
+    )
+    set({ units: updated })
+  },
+
+  attackMoveSelected: (x, y) => {
+    const state = get()
+    const destination = { x, y }
+    const updated = state.units.map((u) =>
+      state.selectedIds.includes(u.id) && canAttackMove(u)
+        ? { ...u, state: 'attackMoving' as const, commandDestination: destination, path: routeTo(state.buildings, state.nodes, u, destination) }
+        : u,
+    )
+    set({ units: updated })
   },
 
   tick: (dt) => {
