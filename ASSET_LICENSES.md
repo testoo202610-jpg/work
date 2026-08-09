@@ -1,6 +1,14 @@
 # Asset Licenses
 
-All game visuals are original procedural/vector-style artwork generated at runtime with Phaser Graphics. The isometric terrain, buildings, resources, human units, horse/rider cavalry silhouettes, shadows, banners, and effects are authored in `src/visualArt.ts`, `src/isoRender.ts`, and `src/GameCanvas.tsx`. No commercial-game artwork, audio, maps, names, characters, or code are included.
+All new battlefield sprite artwork is original inline SVG artwork created for this project and stored under `public/assets/rts/`. It is loaded as Phaser SVG textures/images through `src/assets.ts` and `src/textureArt.ts`. The isometric terrain, fallback overlays, shadows, banners, and effects remain authored in `src/visualArt.ts`, `src/isoRender.ts`, and `src/GameCanvas.tsx`. No commercial-game artwork, audio, maps, names, characters, or code are included.
+
+## Original sprite textures
+
+| Asset family | Source | License | Modifications |
+|---|---|---|---|
+| `public/assets/rts/units/*.svg` | Original project artwork authored for Dragon Kingdoms | Project-owned/original | Inline vector shapes and gradients; loaded as Phaser SVG textures |
+| `public/assets/rts/buildings/*.svg` | Original project artwork authored for Dragon Kingdoms | Project-owned/original | Inline isometric architectural illustrations |
+| `public/assets/rts/resources/*.svg` | Original project artwork authored for Dragon Kingdoms | Project-owned/original | Inline tree, stone, and gold deposit illustrations |
 
 ## Audio
 

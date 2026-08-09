@@ -6,6 +6,7 @@ import { useGameStore } from './store'
 import { ISO, isoDepth, isoToWorld, worldToIso } from './isometric'
 import { diamondPath, drawIsoShadow } from './isoRender'
 import { drawBuildingArt, drawUnit, unitFacing, visualState } from './visualArt'
+import { preloadArt, textureForBuilding, textureForResource, textureForUnit } from './textureArt'
 
 const colors: Record<string, number> = { food: 0x79b957, wood: 0x9b673d, stone: 0xa7b1b8, gold: 0xf0c44c }
 
@@ -23,7 +24,12 @@ class RTSScene extends Phaser.Scene {
   private fogLayer!: Phaser.GameObjects.Graphics
   private overlayLayer!: Phaser.GameObjects.Graphics
   private dragBox?: Phaser.GameObjects.Rectangle
+  private unitSprites = new Map<string, Phaser.GameObjects.Sprite>()
+  private buildingSprites = new Map<string, Phaser.GameObjects.Image>()
+  private resourceSprites = new Map<string, Phaser.GameObjects.Image>()
   constructor() { super('rts') }
+
+  preload() { preloadArt(this) }
 
   create() {
     sceneRegistry.set(this)
@@ -193,6 +199,7 @@ class RTSScene extends Phaser.Scene {
     const project = (point: { x: number; y: number }) => worldToIso(point)
 
     state.nodes.filter((n) => n.amount > 0 && isExplored(n.x, n.y)).sort((a, b) => isoDepth(a) - isoDepth(b)).forEach((n) => {
+      if (this.resourceSprites.has(n.id)) return
       if (!isVisible(n.x, n.y) && n.type !== 'wood' && n.type !== 'stone' && n.type !== 'gold' && n.type !== 'food') return
       const p = project(n)
       drawIsoShadow(g, n, n.type === 'wood' ? 56 : 44)
@@ -211,6 +218,7 @@ class RTSScene extends Phaser.Scene {
       g.strokeEllipse(p.x, p.y + 10, 54, 18)
     })
 
+    this.syncSpriteViews(state)
     this.entityLayer.clear()
     const e = this.entityLayer
 
@@ -230,6 +238,7 @@ class RTSScene extends Phaser.Scene {
       .forEach((b) => this.drawBuilding(e, b, state.selectedIds.includes(b.id)))
 
     state.units.filter((u) => u.state !== 'dead' && (u.faction !== 'enemy' || isVisible(u.x, u.y))).sort((a, b) => isoDepth(a) - isoDepth(b)).forEach((u) => {
+      if (this.unitSprites.has(u.id)) return
       drawUnit(e, u, { time: this.currentTime, selected: state.selectedIds.includes(u.id), faction: u.faction, state: visualState(u, this.currentTime), facing: unitFacing(u) })
     })
 
@@ -270,7 +279,55 @@ class RTSScene extends Phaser.Scene {
     }
   }
 
+  private syncSpriteViews(state: ReturnType<typeof useGameStore.getState>): void {
+    const liveUnits = new Set(state.units.filter((u) => u.state !== 'dead').map((u) => u.id))
+    this.unitSprites.forEach((sprite, id) => { if (!liveUnits.has(id)) { sprite.destroy(); this.unitSprites.delete(id) } })
+    state.units.filter((u) => u.state !== 'dead').forEach((u) => {
+      const key = textureForUnit(u)
+      let sprite = this.unitSprites.get(u.id)
+      if (!sprite && this.textures.exists(key)) { sprite = this.add.sprite(0, 0, key).setOrigin(0.5, 1); this.unitSprites.set(u.id, sprite) }
+      if (!sprite) return
+      const p = worldToIso(u); sprite.setPosition(p.x, p.y + 8).setDepth(isoDepth(u) + 1000).setVisible(this.isEntityVisible(u.x, u.y, state))
+      const walking = Boolean(u.path?.length)
+      sprite.setScale(u.type === 'cavalry' ? 0.48 : 0.34)
+      sprite.setTint(state.selectedIds.includes(u.id) ? 0xffe27a : u.faction === 'enemy' ? 0xffb0a0 : 0xffffff)
+      sprite.setFlipX(unitFacing(u) < -Math.PI / 2 || unitFacing(u) > Math.PI / 2)
+      sprite.setAlpha(u.state === 'dead' ? 0 : 1)
+      if (walking) sprite.setAngle(Math.sin(this.currentTime * 0.02) * 2)
+      else sprite.setAngle(0)
+    })
+    const liveBuildings = new Set(state.buildings.map((b) => b.id))
+    this.buildingSprites.forEach((sprite, id) => { if (!liveBuildings.has(id)) { sprite.destroy(); this.buildingSprites.delete(id) } })
+    state.buildings.forEach((b) => {
+      const key = textureForBuilding(b)
+      if (!key) return
+      let sprite = this.buildingSprites.get(b.id)
+      if (!sprite && this.textures.exists(key)) { sprite = this.add.image(0, 0, key).setOrigin(0.5, 1); this.buildingSprites.set(b.id, sprite) }
+      if (!sprite) return
+      const p = worldToIso(b); sprite.setPosition(p.x, p.y + 4).setDepth(isoDepth(b) + 500).setVisible(b.faction === 'player' || this.isEntityVisible(b.x, b.y, state))
+      sprite.setScale(b.type === 'headquarters' ? 0.72 : 0.55).setAlpha(b.progress < 1 ? 0.55 : 1)
+    })
+    const liveResources = new Set(state.nodes.filter((n) => n.amount > 0).map((n) => n.id))
+    this.resourceSprites.forEach((sprite, id) => { if (!liveResources.has(id)) { sprite.destroy(); this.resourceSprites.delete(id) } })
+    state.nodes.filter((n) => n.amount > 0).forEach((n) => {
+      const key = textureForResource(n.type)
+      if (!key) return
+      let sprite = this.resourceSprites.get(n.id)
+      if (!sprite && this.textures.exists(key)) { sprite = this.add.image(0, 0, key).setOrigin(0.5, 1); this.resourceSprites.set(n.id, sprite) }
+      if (!sprite) return
+      const p = worldToIso(n); sprite.setPosition(p.x, p.y + 6).setDepth(isoDepth(n) + 200).setVisible(this.isEntityVisible(n.x, n.y, state)).setScale(n.type === 'wood' ? 0.42 : 0.34)
+    })
+  }
+
+  private isEntityVisible(x: number, y: number, state: ReturnType<typeof useGameStore.getState>): boolean {
+    return state.visible.includes(gridKey(x, y)) || state.explored.includes(gridKey(x, y))
+  }
   private drawBuilding(g: Phaser.GameObjects.Graphics, b: Building, selected: boolean) {
+    if (textureForBuilding(b) && this.buildingSprites.has(b.id)) {
+      const sprite = this.buildingSprites.get(b.id)
+      if (sprite) sprite.setTint(selected ? 0xffe27a : 0xffffff)
+      return
+    }
     drawBuildingArt(g, b, selected)
     const p = worldToIso(b)
     const fp = BUILDING_STATS[b.type].footprint
