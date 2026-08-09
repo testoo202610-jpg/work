@@ -16,7 +16,9 @@ export const ART_ASSETS = {
   },
   resources: {
     wood: '/work/assets/rts-hd/resources/trees.png',
+    woodVariant: '/work/assets/rts-hd/resources/trees2.png',
     stone: '/work/assets/rts-hd/resources/stone.png',
+    stoneVariant: '/work/assets/rts-hd/resources/stone2.png',
     gold: '/work/assets/rts-hd/resources/gold.png',
   },
 } as const

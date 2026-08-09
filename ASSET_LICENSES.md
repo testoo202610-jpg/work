@@ -4,7 +4,7 @@ All new battlefield sprite artwork is original inline SVG artwork created for th
 
 ## Original sprite textures
 
-The primary runtime battlefield textures are raster PNG sprite sheets under `public/assets/rts-hd/`. They were generated locally from original project artwork into 4×4 frame atlases, with frame variants for direction/state presentation. The older SVG files under `public/assets/rts/` remain fallback/source artwork only.
+The primary runtime battlefield textures are raster PNG sprite sheets under `public/assets/rts-hd/`. The final unit/environment PNGs were selected from the project-owned game-ready art pack supplied in this session and normalized into 4×4 frame atlases with transparent edges. The older SVG files under `public/assets/rts/` remain fallback/source artwork only.
 
 | Asset family | Source | License | Modifications |
 |---|---|---|---|
