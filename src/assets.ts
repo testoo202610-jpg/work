@@ -1,25 +1,30 @@
 export const ART_ASSETS = {
   units: {
-    worker: '/work/assets/rts/units/worker.svg',
-    swordsman: '/work/assets/rts/units/swordsman.svg',
-    archer: '/work/assets/rts/units/archer.svg',
-    commander: '/work/assets/rts/units/commander.svg',
-    cavalry: '/work/assets/rts/units/cavalry.svg',
+    worker: '/work/assets/rts-hd/units/worker.png',
+    swordsman: '/work/assets/rts-hd/units/swordsman.png',
+    archer: '/work/assets/rts-hd/units/archer.png',
+    commander: '/work/assets/rts-hd/units/commander.png',
+    cavalry: '/work/assets/rts-hd/units/cavalry.png',
   },
   buildings: {
-    headquarters: '/work/assets/rts/buildings/headquarters.svg',
-    barracks: '/work/assets/rts/buildings/barracks.svg',
-    stable: '/work/assets/rts/buildings/stable.svg',
-    farm: '/work/assets/rts/buildings/farm.svg',
-    storage: '/work/assets/rts/buildings/storage.svg',
-    watchtower: '/work/assets/rts/buildings/watchtower.svg',
+    headquarters: '/work/assets/rts-hd/buildings/headquarters.png',
+    barracks: '/work/assets/rts-hd/buildings/barracks.png',
+    stable: '/work/assets/rts-hd/buildings/stable.png',
+    farm: '/work/assets/rts-hd/buildings/farm.png',
+    storage: '/work/assets/rts-hd/buildings/storage.png',
+    watchtower: '/work/assets/rts-hd/buildings/watchtower.png',
   },
   resources: {
-    wood: '/work/assets/rts/resources/trees.svg',
-    stone: '/work/assets/rts/resources/stone.svg',
-    gold: '/work/assets/rts/resources/gold.svg',
+    wood: '/work/assets/rts-hd/resources/trees.png',
+    stone: '/work/assets/rts-hd/resources/stone.png',
+    gold: '/work/assets/rts-hd/resources/gold.png',
   },
 } as const
 
-export type ArtKey = keyof typeof ART_ASSETS.units
-export const artKey = (type: string): string => `rts-${type}`
+export const ART_FRAME = {
+  units: { frameWidth: 224, frameHeight: 288 },
+  buildings: { frameWidth: 448, frameHeight: 352 },
+  resources: { frameWidth: 288, frameHeight: 288 },
+} as const
+
+export const artKey = (type: string): string => `rts-hd-${type}`

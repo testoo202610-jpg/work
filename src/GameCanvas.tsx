@@ -6,7 +6,7 @@ import { useGameStore } from './store'
 import { ISO, isoDepth, isoToWorld, worldToIso } from './isometric'
 import { diamondPath, drawIsoShadow } from './isoRender'
 import { drawBuildingArt, drawUnit, unitFacing, visualState } from './visualArt'
-import { preloadArt, textureForBuilding, textureForResource, textureForUnit } from './textureArt'
+import { animationFrame, preloadArt, textureForBuilding, textureForResource, textureForUnit } from './textureArt'
 
 const colors: Record<string, number> = { food: 0x79b957, wood: 0x9b673d, stone: 0xa7b1b8, gold: 0xf0c44c }
 
@@ -301,7 +301,8 @@ class RTSScene extends Phaser.Scene {
       if (!sprite) return
       const p = worldToIso(u); sprite.setPosition(p.x, p.y + 8).setDepth(isoDepth(u) + 1000).setVisible(this.isEntityVisible(u.x, u.y, state))
       const walking = Boolean(u.path?.length)
-      sprite.setScale(u.type === 'cavalry' ? 0.62 : 0.48)
+      sprite.setScale(u.type === 'cavalry' ? 0.38 : 0.28)
+      sprite.setFrame(animationFrame(visualState(u, this.currentTime), this.currentTime, unitFacing(u)))
       sprite.setTint(state.selectedIds.includes(u.id) ? 0xffe27a : u.faction === 'enemy' ? 0xffb0a0 : 0xffffff)
       sprite.setFlipX(unitFacing(u) < -Math.PI / 2 || unitFacing(u) > Math.PI / 2)
       sprite.setAlpha(u.state === 'dead' ? 0 : 1)
@@ -317,7 +318,8 @@ class RTSScene extends Phaser.Scene {
       if (!sprite && this.textures.exists(key)) { sprite = this.add.image(0, 0, key).setOrigin(0.5, 1); this.buildingSprites.set(b.id, sprite) }
       if (!sprite) return
       const p = worldToIso(b); sprite.setPosition(p.x, p.y + 4).setDepth(isoDepth(b) + 500).setVisible(b.faction === 'player' || this.isEntityVisible(b.x, b.y, state))
-      sprite.setScale(b.type === 'headquarters' ? 0.9 : b.type === 'watchtower' ? 0.76 : 0.68).setAlpha(b.progress < 1 ? 0.55 : 1)
+      sprite.setFrame(b.progress < 0.25 ? 12 : b.progress < 0.5 ? 8 : b.progress < 0.75 ? 4 : 0)
+      sprite.setScale(b.type === 'headquarters' ? 0.42 : b.type === 'watchtower' ? 0.36 : 0.3).setAlpha(b.progress < 1 ? 0.55 : 1)
     })
     const liveResources = new Set(state.nodes.filter((n) => n.amount > 0).map((n) => n.id))
     this.resourceSprites.forEach((sprite, id) => { if (!liveResources.has(id)) { sprite.destroy(); this.resourceSprites.delete(id) } })
@@ -327,7 +329,7 @@ class RTSScene extends Phaser.Scene {
       let sprite = this.resourceSprites.get(n.id)
       if (!sprite && this.textures.exists(key)) { sprite = this.add.image(0, 0, key).setOrigin(0.5, 1); this.resourceSprites.set(n.id, sprite) }
       if (!sprite) return
-      const p = worldToIso(n); sprite.setPosition(p.x, p.y + 6).setDepth(isoDepth(n) + 200).setVisible(this.isEntityVisible(n.x, n.y, state)).setScale(n.type === 'wood' ? 0.42 : 0.34)
+      const p = worldToIso(n); sprite.setPosition(p.x, p.y + 6).setDepth(isoDepth(n) + 200).setVisible(this.isEntityVisible(n.x, n.y, state)).setScale(n.type === 'wood' ? 0.24 : 0.2)
     })
   }
 
