@@ -34,8 +34,8 @@ class RTSScene extends Phaser.Scene {
   create() {
     sceneRegistry.set(this)
     this.cameras.main.setBounds(0, 0, 2048, 1400)
-    this.cameras.main.setZoom(0.82)
-    this.cameras.main.centerOn(ISO.originX, 500)
+    this.layoutCamera()
+    this.scale.on(Phaser.Scale.Events.RESIZE, () => this.layoutCamera())
     // persistent layers — never removed, only redrawn
     this.terrainLayer = this.add.graphics()
     this.entityLayer = this.add.graphics()
@@ -147,6 +147,15 @@ class RTSScene extends Phaser.Scene {
   }
 
   centerOn(x: number, y: number) { this.cameras.main.centerOn(x, y) }
+
+  private layoutCamera(): void {
+    const width = this.scale.width || 1000
+    const zoom = Math.min(1.8, Math.max(1.08, width / 950))
+    this.cameras.main.setZoom(zoom)
+    this.cameras.main.centerOn(ISO.originX, 540)
+  }
+
+
   hit(x: number, y: number): { id: string; kind: 'node' | 'unit' | 'building' } | undefined {
     const state = useGameStore.getState()
     const world = isoToWorld({ x, y })
@@ -183,12 +192,15 @@ class RTSScene extends Phaser.Scene {
     g.fillRect(0, 0, MAP_WIDTH, MAP_HEIGHT)
     for (let col = 0; col < MAP_COLS; col++) for (let row = 0; row < MAP_ROWS; row++) {
       const tile = worldToIso({ x: col * GRID_SIZE + GRID_SIZE / 2, y: row * GRID_SIZE + GRID_SIZE / 2 })
-      const shade = ((col * 13 + row * 7) % 9 === 0) ? 0x315e4c : ((col + row) % 5 === 0 ? 0x2b5747 : 0x285141)
+      const noise = (col * 37 + row * 17 + col * row * 3) % 17
+      const shade = noise < 3 ? 0x315f4e : noise < 6 ? 0x2d5949 : noise < 9 ? 0x285141 : 0x2b5747
       diamondPath(g, tile, ISO.tileWidth, ISO.tileHeight)
       g.fillStyle(shade, 1); g.fillPath()
-      if ((col * 3 + row * 5) % 37 === 0) {
-        g.fillStyle(0x4d8060, 0.35)
-        g.fillEllipse(tile.x - 8, tile.y - 2, 7, 3)
+      if (noise === 2 || (col > 8 && col < 19 && row > 14 && row < 22 && (col + row) % 4 === 0)) {
+        g.fillStyle(0x735238, 0.32); g.fillEllipse(tile.x, tile.y + 2, 26, 7)
+      }
+      if (noise === 11) {
+        g.fillStyle(0x8fb36a, 0.45); g.fillTriangle(tile.x - 8, tile.y + 4, tile.x - 3, tile.y - 5, tile.x, tile.y + 4); g.fillTriangle(tile.x + 2, tile.y + 4, tile.x + 8, tile.y - 3, tile.x + 11, tile.y + 4)
       }
     }
 
@@ -289,7 +301,7 @@ class RTSScene extends Phaser.Scene {
       if (!sprite) return
       const p = worldToIso(u); sprite.setPosition(p.x, p.y + 8).setDepth(isoDepth(u) + 1000).setVisible(this.isEntityVisible(u.x, u.y, state))
       const walking = Boolean(u.path?.length)
-      sprite.setScale(u.type === 'cavalry' ? 0.48 : 0.34)
+      sprite.setScale(u.type === 'cavalry' ? 0.62 : 0.48)
       sprite.setTint(state.selectedIds.includes(u.id) ? 0xffe27a : u.faction === 'enemy' ? 0xffb0a0 : 0xffffff)
       sprite.setFlipX(unitFacing(u) < -Math.PI / 2 || unitFacing(u) > Math.PI / 2)
       sprite.setAlpha(u.state === 'dead' ? 0 : 1)
@@ -305,7 +317,7 @@ class RTSScene extends Phaser.Scene {
       if (!sprite && this.textures.exists(key)) { sprite = this.add.image(0, 0, key).setOrigin(0.5, 1); this.buildingSprites.set(b.id, sprite) }
       if (!sprite) return
       const p = worldToIso(b); sprite.setPosition(p.x, p.y + 4).setDepth(isoDepth(b) + 500).setVisible(b.faction === 'player' || this.isEntityVisible(b.x, b.y, state))
-      sprite.setScale(b.type === 'headquarters' ? 0.72 : 0.55).setAlpha(b.progress < 1 ? 0.55 : 1)
+      sprite.setScale(b.type === 'headquarters' ? 0.9 : b.type === 'watchtower' ? 0.76 : 0.68).setAlpha(b.progress < 1 ? 0.55 : 1)
     })
     const liveResources = new Set(state.nodes.filter((n) => n.amount > 0).map((n) => n.id))
     this.resourceSprites.forEach((sprite, id) => { if (!liveResources.has(id)) { sprite.destroy(); this.resourceSprites.delete(id) } })
